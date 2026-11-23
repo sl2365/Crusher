@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 701 167" role="img" aria-labelledby="title desc">
+  <title id="title">Crusher — temporary logo</title>
+  <desc id="desc">Minimal geometric CRUSHER lettering in warm metallic colours.</desc>
+  <defs>
+    <linearGradient id="warmMetal" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#e7c782"/>
+      <stop offset="0.53" stop-color="#e4ae61"/>
+      <stop offset="1" stop-color="#ce7e5c"/>
+    </linearGradient>
+  </defs>
+  <g fill="none" stroke="url(#warmMetal)" stroke-width="9.5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- C -->
+    <path d="M72 34 H43 Q28 34 28 49 V111 Q28 126 43 126 H72"/>
+    <!-- R -->
+    <path d="M119 126 V34 H158 Q181 34 181 58 Q181 82 158 82 H119 M151 82 L184 126"/>
+    <!-- U -->
+    <path d="M215 34 V110 Q215 126 231 126 H257 Q274 126 274 110 V34"/>
+    <!-- S -->
+    <path d="M369 34 H328 Q306 34 306 56 Q306 78 329 78 H348 Q370 78 370 102 Q370 126 345 126 H305"/>
+    <!-- H -->
+    <path d="M398 34 V126 M459 34 V126 M398 80 H459"/>
+    <!-- E -->
+    <path d="M552 34 H491 V126 H552 M491 80 H541"/>
+    <!-- R -->
+    <path d="M584 126 V34 H623 Q649 34 649 58 Q649 81 623 81 H584 M619 81 L655 126"/>
+    <path d="M28 153 H660" stroke-width="3.5"/>
+  </g>
+</svg>
