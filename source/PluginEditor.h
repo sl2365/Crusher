@@ -247,6 +247,11 @@ private:
     Dial* codecBitsDial = nullptr;
     Dial* codecDamageDial = nullptr;
     Dial* codecToneDial = nullptr;
+    Dial* vocalCharacterDial = nullptr;
+    Dial* vocalBodyDial = nullptr;
+    Dial* vocalPresenceDial = nullptr;
+    Dial* vocalBiteDial = nullptr;
+    Dial* vocalSmoothDial = nullptr;
     Dial* loFiRateDial = nullptr;
     Dial* loFiBitsDial = nullptr;
     Dial* loFiClipDial = nullptr;

@@ -1,5 +1,18 @@
 # Crusher Changelog
 
+## v1.43.4 — Vocal control rebalancing (2026-11-23)
+
+- Improved the perceptible range of Vocal BODY, PRESENCE, BITE and SMOOTH on vocals, snares, drums and mixed SV-Drummer-style buses. CHARACTER and DRIVE retain their transfer curves, meaning and range. BODY now spans ±15 dB and dynamically covers more low-mid content away from centre; PRESENCE adds post-saturation adjustment; BITE varies the high-band crossover and shaped-signal blend; SMOOTH adds stronger level-responsive taming and progressive post filtering. No new parameters, noise, look-ahead, latency or audio-thread allocations. Control coefficient lookup tables are computed during prepare().
+- At the 50% defaults for all four rebalanced controls, standalone comparisons with v1.43.3 are sample-exact across 22.05–192 kHz, all tested DRIVE and CHARACTER positions. Non-neutral v1.43.3 Vocal presets intentionally sound different. All other 21 distortion DSP files, parameter and type IDs, 32-step/16-slot sequencer structure, EQ, filter, comp and mix remain unchanged. Resources excluded from source ZIP. Windows VST3 compilation, PHI listening and CPU benchmarks remain unverified.
+
+
+## v1.43.3 — Vocal distortion (2026-11-23)
+
+- Added **Vocal** as distortion type 22 (DSP index 21, dropdown ID 22), retaining all 21 existing model IDs, parameters and sound engines. Original `CrusherVocal.h` combines low-band weight, characteristic midrange saturation, adjustable presence and high-band bite with a signal-responsive upper-band smoother, aimed at vocals and drums. It generates no synthetic noise.
+- Controls: shared DRIVE and OUTPUT, plus five dedicated saved, host-automatable and drag-to-sequencer/ENV controls: CHARACTER, BODY, PRESENCE, BITE, SMOOTH (appended target choices **135–139**, leaving 1–134 untouched). The six-knob main distortion panel, existing controls and sequencing UI stay in place. Vocal DSP and smoothers advance only while selected or fading out; audio processing allocates no memory.
+- Source ZIP excludes Resources. Standalone DSP signal/impact/extreme tests and structural integrity checks completed; full Windows VST3 compilation, DAW listening and CPU measurement remain to be verified.
+
+
 ## v1.43.2 — Measured parameter readouts (2026-11-23)
 
 - Display-only unit readouts replace percentages for 15 parameters: shared filter cutoff (Hz/kHz) and resonance (Q); Codec algorithm name, capture rate (Hz/kHz) and whole-bit resolution; Lo-Fi capture rate and fractional bit resolution; Diode Clip IN HP, ENV, OUT HP and OUT LP (Hz/ms); Fresh FREQ, Razor FREQ and Fuzz TONE (Hz/kHz); Crackle DENSITY (relative multiplier). Numeric text entry translates back to the original percentage-based host parameters.

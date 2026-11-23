@@ -47,6 +47,11 @@ constexpr auto codecRate = "codecRate";
 constexpr auto codecBits = "codecBits";
 constexpr auto codecDamage = "codecDamage";
 constexpr auto codecTone = "codecTone";
+constexpr auto vocalCharacter = "vocalCharacter";
+constexpr auto vocalBody = "vocalBody";
+constexpr auto vocalPresence = "vocalPresence";
+constexpr auto vocalBite = "vocalBite";
+constexpr auto vocalSmooth = "vocalSmooth";
 constexpr auto loFiRate = "loFiRate";
 constexpr auto loFiBits = "loFiBits";
 constexpr auto loFiClip = "loFiClip";
@@ -405,7 +410,7 @@ CrusherAudioProcessor::createParameterLayout()
         juce::StringArray { "Soft Clip", "Saturation", "Tube", "Rectify",
             "Crackle", "Lightning", "Amp", "Bumpy", "Asym", "Razor",
             "Pixelated", "Comb", "Stressed", "Samurai", "Fresh",
-            "Hard Clip", "Fuzz", "Hump", "Diode Clip", "Lo-Fi", "Codec" }, 6));
+            "Hard Clip", "Fuzz", "Hump", "Diode Clip", "Lo-Fi", "Codec", "Vocal" }, 6));
     // Shared wet-engine controls: stereo is the original, untouched default.
     layout.push_back(std::make_unique<APC>(
         juce::ParameterID(ParameterIds::distMode, 1), "Distortion Input Mode",
@@ -892,6 +897,19 @@ CrusherAudioProcessor::createParameterLayout()
             attributesFor(item.first)));
     }
 
+    // Vocal is appended after Codec; no earlier saved parameter IDs or model
+    // indices change. The separate distortion OUTPUT stays shared.
+    for (const auto& item : std::array<std::pair<const char*, const char*>, 5> {{
+             { ParameterIds::vocalCharacter, "Vocal Character" },
+             { ParameterIds::vocalBody, "Vocal Body" },
+             { ParameterIds::vocalPresence, "Vocal Presence" },
+             { ParameterIds::vocalBite, "Vocal Bite" },
+             { ParameterIds::vocalSmooth, "Vocal Smooth" } }})
+        layout.push_back(std::make_unique<APF>(
+            juce::ParameterID(item.first, 1), item.second,
+            juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
+            attributesFor(item.first)));
+
     return { layout.begin(), layout.end() };
 }
 
@@ -937,6 +955,11 @@ void CrusherAudioProcessor::bindParameterPointers()
     raw.codecBits = bind(ParameterIds::codecBits);
     raw.codecDamage = bind(ParameterIds::codecDamage);
     raw.codecTone = bind(ParameterIds::codecTone);
+    raw.vocalCharacter = bind(ParameterIds::vocalCharacter);
+    raw.vocalBody = bind(ParameterIds::vocalBody);
+    raw.vocalPresence = bind(ParameterIds::vocalPresence);
+    raw.vocalBite = bind(ParameterIds::vocalBite);
+    raw.vocalSmooth = bind(ParameterIds::vocalSmooth);
     raw.loFiRate = bind(ParameterIds::loFiRate);
     raw.loFiBits = bind(ParameterIds::loFiBits);
     raw.loFiClip = bind(ParameterIds::loFiClip);
@@ -1297,6 +1320,7 @@ void CrusherAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock
     diodeProcessor.prepare(currentSampleRate);
     loFiProcessor.prepare(currentSampleRate);
     codecProcessor.prepare(currentSampleRate);
+    vocalProcessor.prepare(currentSampleRate);
     lightningProcessor.prepare(currentSampleRate);
     pixelatedProcessor.prepare(currentSampleRate);
     razorProcessor.prepare(currentSampleRate);
@@ -1374,6 +1398,11 @@ void CrusherAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock
     resetSmoother(codecBitsValue, load(raw.codecBits) * 0.01f);
     resetSmoother(codecDamageValue, load(raw.codecDamage) * 0.01f);
     resetSmoother(codecToneValue, load(raw.codecTone) * 0.01f);
+    resetSmoother(vocalCharacterValue, load(raw.vocalCharacter) * 0.01f);
+    resetSmoother(vocalBodyValue, load(raw.vocalBody) * 0.01f);
+    resetSmoother(vocalPresenceValue, load(raw.vocalPresence) * 0.01f);
+    resetSmoother(vocalBiteValue, load(raw.vocalBite) * 0.01f);
+    resetSmoother(vocalSmoothValue, load(raw.vocalSmooth) * 0.01f);
     resetSmoother(loFiRateValue, load(raw.loFiRate) * 0.01f);
     resetSmoother(loFiBitsValue, load(raw.loFiBits) * 0.01f);
     resetSmoother(loFiClipValue, load(raw.loFiClip) * 0.01f);
@@ -1732,7 +1761,7 @@ void CrusherAudioProcessor::processBlock(
     const bool filterOn = load(raw.filterEnabled) >= 0.5f;
     const bool compOn = load(raw.compEnabled) >= 0.5f;
     // Dispatch only the selected algorithm; during a short type-change
-    // crossfade process the outgoing model too, never all 21 engines.
+    // crossfade process the outgoing model too, never all 22 engines.
     const int selectedDistortion = juce::jlimit(
         0, distortionTypeCount - 1,
         static_cast<int>(std::lround(load(raw.distortionType))));
@@ -1768,6 +1797,8 @@ void CrusherAudioProcessor::processBlock(
         || (transitioningModels && previousDistortionType == 9));
     const bool pixelatedInUse = distortionMayRun && (currentDistortionType == 10
         || (transitioningModels && previousDistortionType == 10));
+    const bool vocalInUse = distortionMayRun && (currentDistortionType == 21
+        || (transitioningModels && previousDistortionType == 21));
     const bool codecInUse = distortionMayRun && (currentDistortionType == 20
         || (transitioningModels && previousDistortionType == 20));
     const bool loFiInUse = distortionMayRun && (currentDistortionType == 19
@@ -1836,6 +1867,23 @@ void CrusherAudioProcessor::processBlock(
         sequenced(crusher::sequencer::codecDamageTargetChoice, raw.codecDamage) * 0.01f));
     updateCodecControl(codecToneValue, juce::jlimit(0.0f, 1.0f,
         sequenced(crusher::sequencer::codecToneTargetChoice, raw.codecTone) * 0.01f));
+
+    const auto updateVocalControl = [vocalInUse](LinearSmoother& smoother,
+                                                 float target) noexcept
+    {
+        if (vocalInUse) smoother.setTargetValue(target);
+        else smoother.setCurrentAndTargetValue(target);
+    };
+    updateVocalControl(vocalCharacterValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::vocalCharacterTargetChoice, raw.vocalCharacter) * 0.01f));
+    updateVocalControl(vocalBodyValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::vocalBodyTargetChoice, raw.vocalBody) * 0.01f));
+    updateVocalControl(vocalPresenceValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::vocalPresenceTargetChoice, raw.vocalPresence) * 0.01f));
+    updateVocalControl(vocalBiteValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::vocalBiteTargetChoice, raw.vocalBite) * 0.01f));
+    updateVocalControl(vocalSmoothValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::vocalSmoothTargetChoice, raw.vocalSmooth) * 0.01f));
 
     const auto updateLoFiControl = [loFiInUse](LinearSmoother& smoother,
                                                float target) noexcept
@@ -2353,6 +2401,16 @@ void CrusherAudioProcessor::processBlock(
                 controls.damage = codecDamageValue.getNextValue();
                 controls.tone = codecToneValue.getNextValue();
                 codecProcessor.setControls(controls);
+            }
+            if (vocalInUse)
+            {
+                crusher::vocal::Controls controls;
+                controls.character = vocalCharacterValue.getNextValue();
+                controls.body = vocalBodyValue.getNextValue();
+                controls.presence = vocalPresenceValue.getNextValue();
+                controls.bite = vocalBiteValue.getNextValue();
+                controls.smooth = vocalSmoothValue.getNextValue();
+                vocalProcessor.setControls(controls);
             }
             if (loFiInUse)
             {

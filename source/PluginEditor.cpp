@@ -114,7 +114,7 @@ juce::Path makeStarPath(juce::Rectangle<float> bounds)
     return path;
 }
 
-constexpr std::array<const char*, 21> distortionSummaries
+constexpr std::array<const char*, 22> distortionSummaries
 {
     "Dense tanh clipping with strong static level compensation",
     "Open arctangent saturation with brighter, gentler harmonics",
@@ -136,9 +136,10 @@ constexpr std::array<const char*, 21> distortionSummaries
     "Mechanical and tube waveshaping with optional tone-shaping controls",
     "Asymmetric diode-inspired clipping with envelope-sensitive response and filtering",
     "Combined rate reduction, 1-16-bit quantisation, clipping, rectification and noise",
-    "Companding and predictive/spectral digital codec artifacts with frame damage"
+    "Companding and predictive/spectral digital codec artifacts with frame damage",
+    "Frequency-selective, character-morphing saturation with dynamic harshness control"
 };
-constexpr std::array<const char*, 21> distortionDetails
+constexpr std::array<const char*, 22> distortionDetails
 {
     "DIST increases density and compression through a level-compensated soft curve.",
     "DIST moves smoothly from clean into open saturation without darkening the top end.",
@@ -160,7 +161,8 @@ constexpr std::array<const char*, 21> distortionDetails
     "MECH and TUBE provide the main character; BODY, BIAS, FOLD and TONE add variation.",
     "DRIVE increases diode-style clipping; ENV and HP/LP filters shape its response.",
     "DRIVE sets the wet amount; RATE, BITS, CLIP, RECTIFY and NOISE combine digital damage.",
-    "DRIVE sets the wet blend; CODEC chooses PCM, mu-law, A-law, speech or spectral loss."
+    "DRIVE sets the wet blend; CODEC chooses PCM, mu-law, A-law, speech or spectral loss.",
+    "DRIVE sets the wet blend; CHARACTER, BODY, PRESENCE, BITE and SMOOTH suit voice and drums."
 };
 static_assert(distortionSummaries.size() == distortionDetails.size());
 // A sized std::array silently fills missing initializers with null pointers.
@@ -3855,7 +3857,7 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     content.addMouseListener(this, true);
     content.setInterceptsMouseClicks(false, true);
 
-    versionLabel.setText("v1.43.2", juce::dontSendNotification);
+    versionLabel.setText("v1.43.4", juce::dontSendNotification);
     versionLabel.setJustificationType(juce::Justification::centred);
     versionLabel.setColour(juce::Label::textColourId, knobIndicatorColour);
     versionLabel.setFont(juce::Font(juce::FontOptions(8.5f,
@@ -3900,6 +3902,11 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     codecBitsDial = addDial("codecBits", "BITS", "Codec: quantizer resolution from 2 to 12 bits.");
     codecDamageDial = addDial("codecDamage", "DAMAGE", "Codec: increase signal-dependent frame faults, grain and spectral noise fill.");
     codecToneDial = addDial("codecTone", "TONE", "Codec: dark/bright post-filter; centre is neutral.");
+    vocalCharacterDial = addDial("vocalCharacter", "CHARACTER", "Vocal: morph from rounded warmth through gritty saturation to hard-edged clipping.");
+    vocalBodyDial = addDial("vocalBody", "BODY", "Vocal: cut or boost low-mid body; 50% is neutral, with wider frequency reach at the extremes.");
+    vocalPresenceDial = addDial("vocalPresence", "PRESENCE", "Vocal: cut or boost upper-mid intelligibility and snare attack, even with strong saturation.");
+    vocalBiteDial = addDial("vocalBite", "BITE", "Vocal: sweep the upper-band edge from restrained to aggressive harmonics and attack.");
+    vocalSmoothDial = addDial("vocalSmooth", "SMOOTH", "Vocal: tame upper-band harshness and progressively soften the post-distortion tone.");
     loFiRateDial = addDial("loFiRate", "RATE", "Lo-Fi: capture-rate reduction, from host rate to 180 Hz. Right-click for PRE/POST anti-alias settings.");
     loFiBitsDial = addDial("loFiBits", "BITS", "Lo-Fi: continuous 1-bit through 16-bit quantisation.");
     loFiClipDial = addDial("loFiClip", "CLIP", "Lo-Fi: increase hard-clipping intensity before downsampling.");
@@ -4197,6 +4204,7 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     distortionTypeBox.addItem("Soft Clip", 1);
     distortionTypeBox.addItem("Stressed", 13);
     distortionTypeBox.addItem("Tube", 3);
+    distortionTypeBox.addItem("Vocal", 22);
     configureCombo(distortionTypeBox, distortionTypeLabel, "Dist Type",
         "Choose a distortion alphabetically (Hump keeps its original MECH and TUBE).");
     if (auto* parameter = processor.parameters.getParameter("distortionType"))
@@ -4205,9 +4213,9 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
             *parameter,
             [this](float value)
             {
-                // Parameter values 0..20 map to dropdown item IDs 1..21.
+                // Parameter values 0..21 map to dropdown item IDs 1..22.
                 distortionTypeBox.setSelectedId(
-                    juce::jlimit(1, 21, juce::roundToInt(value) + 1),
+                    juce::jlimit(1, 22, juce::roundToInt(value) + 1),
                     juce::dontSendNotification);
                 updateDistortionControls();
             }, nullptr);
@@ -4833,7 +4841,7 @@ void CrusherAudioProcessorEditor::updateSectionDimming()
                         bumpyBiasDial, bumpyToneDial, combTimeDial, combFeedbackDial, combDampDial,
                         combSpreadDial, combToneDial, crackleDensityDial, crackleBurstDial, crackleDecayDial,
                         crackleGritDial, crackleToneDial, diodeInputHPDial, diodeEnvelopeDial,
-                        diodeShapeDial, diodeOutputHPDial, diodeOutputLPDial, codecModeDial, codecRateDial, codecBitsDial, codecDamageDial, codecToneDial, loFiRateDial, loFiBitsDial, loFiClipDial, loFiRectifyDial, loFiNoiseDial, lightningSparkDial, lightningReactDial, lightningClipDial,
+                        diodeShapeDial, diodeOutputHPDial, diodeOutputLPDial, codecModeDial, codecRateDial, codecBitsDial, codecDamageDial, codecToneDial, vocalCharacterDial, vocalBodyDial, vocalPresenceDial, vocalBiteDial, vocalSmoothDial, loFiRateDial, loFiBitsDial, loFiClipDial, loFiRectifyDial, loFiNoiseDial, lightningSparkDial, lightningReactDial, lightningClipDial,
                         lightningEdgeDial, lightningToneDial, pixelatedRateDial, pixelatedBitsDial, pixelatedDitherDial,
                         pixelatedJitterDial, pixelatedToneDial, rectifyWaveDial, rectifyBiasDial, rectifyCurveDial,
                         rectifyFoldDial, rectifyToneDial, softClipThresholdDial, softClipKneeDial, softClipBiasDial,
@@ -5014,6 +5022,7 @@ void CrusherAudioProcessorEditor::updateDistortionControls()
     const bool crackleSelected = selected == 4;
     const bool diodeSelected = selected == 18;
     const bool codecSelected = selected == 20;
+    const bool vocalSelected = selected == 21;
     const bool loFiSelected = selected == 19;
     const bool lightningSelected = selected == 5;
     const bool pixelatedSelected = selected == 10;
@@ -5032,12 +5041,14 @@ void CrusherAudioProcessorEditor::updateDistortionControls()
     {
         driveDial->label.setVisible(visible && ! humpSelected);
         driveDial->slider.setVisible(visible && ! humpSelected);
-        const bool driveCaption = codecSelected || loFiSelected || diodeSelected || ampSelected || asymSelected || bumpySelected
+        const bool driveCaption = vocalSelected || codecSelected || loFiSelected || diodeSelected || ampSelected || asymSelected || bumpySelected
                                   || combSelected || crackleSelected || freshSelected
                                   || fuzzSelected || hardClipSelected || lightningSelected || pixelatedSelected || razorSelected || rectifySelected || samuraiSelected || saturationSelected || softClipSelected || stressedSelected || tubeSelected;
         driveDial->label.setText(driveCaption ? "DRIVE" : "DIST",
                                   juce::dontSendNotification);
-        driveDial->help = codecSelected
+        driveDial->help = vocalSelected
+            ? "Vocal drive: blend from clean to frequency-selective saturation for vocals and drums."
+            : codecSelected
             ? "Codec drive: blend the digital codec degradation from dry to processed."
             : loFiSelected
             ? "Lo-Fi drive: blend the complete digital damage chain from dry to full effect."
@@ -5078,7 +5089,7 @@ void CrusherAudioProcessorEditor::updateDistortionControls()
                                     : samuraiSelected
                                         ? "Samurai drive: raises blade saturation, gating and metallic harmonics."
                                         : "Model-specific DIST amount for the selected distortion type.";
-        const auto sharedHelp = juce::String((codecSelected || loFiSelected || diodeSelected || ampSelected || asymSelected || bumpySelected || combSelected || crackleSelected || freshSelected || fuzzSelected || hardClipSelected || lightningSelected || pixelatedSelected || razorSelected || rectifySelected || samuraiSelected || saturationSelected || softClipSelected || stressedSelected || tubeSelected) ? "DRIVE" : "DIST")
+        const auto sharedHelp = juce::String((vocalSelected || codecSelected || loFiSelected || diodeSelected || ampSelected || asymSelected || bumpySelected || combSelected || crackleSelected || freshSelected || fuzzSelected || hardClipSelected || lightningSelected || pixelatedSelected || razorSelected || rectifySelected || samuraiSelected || saturationSelected || softClipSelected || stressedSelected || tubeSelected) ? "DRIVE" : "DIST")
                               + " | " + driveDial->help;
         driveDial->label.setTooltip(sharedHelp);
         driveDial->slider.setTooltip(sharedHelp);
@@ -5123,6 +5134,13 @@ void CrusherAudioProcessorEditor::updateDistortionControls()
         {
             dial->label.setVisible(visible && codecSelected);
             dial->slider.setVisible(visible && codecSelected);
+        }
+    for (auto* dial : { vocalCharacterDial, vocalBodyDial, vocalPresenceDial,
+                        vocalBiteDial, vocalSmoothDial })
+        if (dial != nullptr)
+        {
+            dial->label.setVisible(visible && vocalSelected);
+            dial->slider.setVisible(visible && vocalSelected);
         }
     for (auto* dial : { loFiRateDial, loFiBitsDial, loFiClipDial,
                         loFiRectifyDial, loFiNoiseDial })
@@ -6340,6 +6358,7 @@ void CrusherAudioProcessorEditor::resized()
     const bool crackleSelected = distortionTypeBox.getSelectedId() == 5;
     const bool diodeSelected = distortionTypeBox.getSelectedId() == 19;
     const bool codecSelected = distortionTypeBox.getSelectedId() == 21;
+    const bool vocalSelected = distortionTypeBox.getSelectedId() == 22;
     const bool loFiSelected = distortionTypeBox.getSelectedId() == 20;
     const bool lightningSelected = distortionTypeBox.getSelectedId() == 6;
     const bool pixelatedSelected = distortionTypeBox.getSelectedId() == 11;
@@ -6357,7 +6376,7 @@ void CrusherAudioProcessorEditor::resized()
     // Shared DRIVE must remain at the top-left for every model that uses it.
     placeDial(driveDial,
         (ampSelected || asymSelected || bumpySelected || combSelected
-         || crackleSelected || diodeSelected || codecSelected || loFiSelected || freshSelected || fuzzSelected || hardClipSelected
+         || crackleSelected || diodeSelected || codecSelected || vocalSelected || loFiSelected || freshSelected || fuzzSelected || hardClipSelected
          || lightningSelected || pixelatedSelected || razorSelected
          || rectifySelected || samuraiSelected || saturationSelected
          || softClipSelected || stressedSelected || tubeSelected) ? 39 : 202,
@@ -6414,6 +6433,13 @@ void CrusherAudioProcessorEditor::resized()
     placeDial(codecToneDial, 39, 154);
     placeDial(codecBitsDial, 120, 154);
     placeDial(codecDamageDial, 201, 154);
+
+    // Vocal: DRIVE / CHARACTER / PRESENCE above BODY / BITE / SMOOTH.
+    placeDial(vocalCharacterDial, 120, 67, 95);
+    placeDial(vocalPresenceDial, 201, 67, 90);
+    placeDial(vocalBodyDial, 39, 154);
+    placeDial(vocalBiteDial, 120, 154);
+    placeDial(vocalSmoothDial, 201, 154);
 
     // Lo-Fi: DRIVE / RATE / BITS above CLIP / RECTIFY / NOISE.
     placeDial(loFiRateDial, 120, 67);

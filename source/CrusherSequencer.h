@@ -52,7 +52,7 @@ struct TargetInfo
     const char* displayName;
 };
 
-inline constexpr std::array<TargetInfo, 134> targets
+inline constexpr std::array<TargetInfo, 139> targets
 {{
     { "distOutput", "Dist Output" },
     { "mix", "Dry / Wet" },
@@ -189,6 +189,11 @@ inline constexpr std::array<TargetInfo, 134> targets
     { "codecBits", "Codec Bits" },
     { "codecDamage", "Codec Damage" },
     { "codecTone", "Codec Tone" },
+    { "vocalCharacter", "Vocal Character" },
+    { "vocalBody", "Vocal Body" },
+    { "vocalPresence", "Vocal Presence" },
+    { "vocalBite", "Vocal Bite" },
+    { "vocalSmooth", "Vocal Smooth" },
 }};
 
 inline constexpr int distOutputTargetChoice = 1;
@@ -325,8 +330,15 @@ inline constexpr int codecRateTargetChoice = 131;
 inline constexpr int codecBitsTargetChoice = 132;
 inline constexpr int codecDamageTargetChoice = 133;
 inline constexpr int codecToneTargetChoice = 134;
-static_assert(codecToneTargetChoice == static_cast<int>(targets.size()),
-              "Codec target IDs must match the target table");
+static_assert(codecToneTargetChoice == 134,
+              "Existing Codec target IDs must not change");
+inline constexpr int vocalCharacterTargetChoice = 135;
+inline constexpr int vocalBodyTargetChoice = 136;
+inline constexpr int vocalPresenceTargetChoice = 137;
+inline constexpr int vocalBiteTargetChoice = 138;
+inline constexpr int vocalSmoothTargetChoice = 139;
+static_assert(vocalSmoothTargetChoice == static_cast<int>(targets.size()),
+              "Vocal target IDs must match the target table");
 
 inline int targetChoiceForParameter(const juce::String& parameterId)
 {
