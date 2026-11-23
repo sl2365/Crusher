@@ -26,6 +26,16 @@ private:
     {
     public:
         std::function<bool()> onSavedStateReset;
+        std::function<void(juce::Point<int>)> onContextMenu;
+        void mouseDown(const juce::MouseEvent& event) override
+        {
+            if (event.mods.isPopupMenu() && onContextMenu != nullptr)
+            {
+                onContextMenu(event.getScreenPosition());
+                return;
+            }
+            juce::Slider::mouseDown(event);
+        }
         void setCentreDetent(double value, double radius)
         {
             centreDetent = value;
@@ -117,6 +127,16 @@ private:
     {
     public:
         std::function<juce::String()> parameterIdProvider;
+        std::function<void(juce::Point<int>)> onContextMenu;
+        void mouseDown(const juce::MouseEvent& event) override
+        {
+            if (event.mods.isPopupMenu() && onContextMenu != nullptr)
+            {
+                onContextMenu(event.getScreenPosition());
+                return;
+            }
+            juce::Label::mouseDown(event);
+        }
         bool dragHandleOnly = false;
         bool dragHandleRight = false;
         void setTargetAppearance(bool assigned, juce::Colour accent);
@@ -138,6 +158,15 @@ private:
 
     class SequencerPanel;
     class EQGraph;
+    class EnvMeter;
+    class FilterShapeButton final : public juce::Button
+    {
+    public:
+        explicit FilterShapeButton(int mode) : juce::Button("Filter shape"), mode(mode) {}
+        void paintButton(juce::Graphics& graphics, bool highlighted, bool down) override;
+    private:
+        int mode = 0;
+    };
     class FolderTreeItem;
     class LookAndFeel final : public juce::LookAndFeel_V4
     {
@@ -213,6 +242,16 @@ private:
     Dial* diodeShapeDial = nullptr;
     Dial* diodeOutputHPDial = nullptr;
     Dial* diodeOutputLPDial = nullptr;
+    Dial* codecModeDial = nullptr;
+    Dial* codecRateDial = nullptr;
+    Dial* codecBitsDial = nullptr;
+    Dial* codecDamageDial = nullptr;
+    Dial* codecToneDial = nullptr;
+    Dial* loFiRateDial = nullptr;
+    Dial* loFiBitsDial = nullptr;
+    Dial* loFiClipDial = nullptr;
+    Dial* loFiRectifyDial = nullptr;
+    Dial* loFiNoiseDial = nullptr;
     Dial* lightningSparkDial = nullptr;
     Dial* lightningReactDial = nullptr;
     Dial* lightningClipDial = nullptr;
@@ -279,6 +318,10 @@ private:
     Dial* asymToneDial = nullptr;
     Dial* filterCutoffDial = nullptr;
     Dial* filterResonanceDial = nullptr;
+    Dial* envSensitivityDial = nullptr;
+    Dial* envAttackDial = nullptr;
+    Dial* envReleaseDial = nullptr;
+    Dial* envDepthDial = nullptr;
     Dial* compAmountDial = nullptr;
     Dial* mixDial = nullptr;
     Dial* distOutputDial = nullptr;
@@ -292,12 +335,25 @@ private:
     SteppedComboBox ampCabinetBox;
     SteppedComboBox eqModeBox;
     juce::ToggleButton eqOnButton;
-    juce::ToggleButton eqResetButton { "FLAT" };
+    juce::ToggleButton eqResetButton { "RESET" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>
         eqOnAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         eqModeAttachment;
     std::unique_ptr<EQGraph> eqGraph;
+    std::unique_ptr<EnvMeter> envMeter;
+    juce::ToggleButton envOnButton;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> envOnAttachment;
+    juce::Label envAssignmentLabel;
+    juce::ToggleButton eqViewButton { "EQ" };
+    juce::ToggleButton envViewButton { "ENV" };
+    bool envViewActive = false;
+    SteppedComboBox filterShapeBox; // APVTS bridge; icons are the visible selectors
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        filterShapeAttachment;
+    FilterShapeButton filterLowButton { 0 };
+    FilterShapeButton filterBandButton { 1 };
+    FilterShapeButton filterHighButton { 2 };
     SteppedComboBox distModeBox; // shared input-mode parameter bridge
     juce::Label ampCabinetLabel;
     juce::ToggleButton distStereoButton { "STEREO" };
@@ -356,6 +412,9 @@ private:
     void updateDistortionControls();
     void updateSectionDimming();
     void resetGraphicEQ();
+    void updateEQEnvView();
+    void updateFilterShapeIcons();
+    void showParameterEnvMenu(const juce::String&, juce::Point<int>);
     juce::Colour filterAccent(int filterIndex) const;
     juce::Colour panelColour(int filterIndex) const;
     void setPresetBrowserOpen(bool);

@@ -4,6 +4,7 @@
 #include "CrusherSequencer.h"
 #include "HumpDSP/Distortion.h"
 #include "HumpDSP/Filter.h"
+#include "CrusherFilterModes.h"
 #include "HumpDSP/Compressor.h"
 #include "HumpDSP/ParamRamp.h"
 #include "CrusherAmpSim.h"
@@ -11,12 +12,14 @@
 #include "CrusherBumpy.h"
 #include "CrusherComb.h"
 #include "CrusherCrackle.h"
+#include "CrusherCodec.h"
 #include "CrusherDiodeClip.h"
 #include "CrusherFresh.h"
 #include "CrusherFuzz.h"
 #include "CrusherHardClip.h"
 #include "CrusherHump.h"
 #include "CrusherLightning.h"
+#include "CrusherLoFi.h"
 #include "CrusherPixelated.h"
 #include "CrusherRazor.h"
 #include "CrusherRectify.h"
@@ -60,9 +63,10 @@ public:
     void getStateInformation(juce::MemoryBlock&) override;
     void setStateInformation(const void*, int) override;
 
+    // Constructed before APVTS; display callbacks use the rate of this instance.
+    std::atomic<double> displaySampleRate { 44100.0 };
     juce::AudioProcessorValueTreeState parameters;
-    static juce::AudioProcessorValueTreeState::ParameterLayout
-        createParameterLayout();
+    juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     static juce::File getDataDirectory();
     static juce::File getSettingsDirectory();
     static juce::File getPresetsDirectory();
@@ -78,11 +82,20 @@ public:
     }
     std::optional<float> getSequencerAnimatedNormalised(
         const juce::String& parameterId) const noexcept;
+    bool assignEnvelopeTarget(const juce::String& parameterId);
+    bool clearEnvelopeTarget(const juce::String& parameterId);
+    void clearAllEnvelopeTargets();
+    bool isEnvelopeTargetAssigned(const juce::String& parameterId) const noexcept;
+    int getEnvelopeAssignmentCount() const noexcept;
+    static constexpr int getEnvelopeTargetLimit() noexcept { return envelopeSlotCount; }
+    float getEnvelopeMeter() const noexcept
+    { return envelopeMeter.load(std::memory_order_relaxed); }
 
 private:
     static constexpr int stateSchemaVersion = 3;
     static constexpr int channelCount = 2;
-    static constexpr int distortionTypeCount = 19;
+    static constexpr int distortionTypeCount = 21;
+    static constexpr int envelopeSlotCount = 8;
     static constexpr int humpDistortionType = 17;
 
     using LinearSmoother = juce::SmoothedValue<
@@ -118,6 +131,18 @@ private:
         std::atomic<float>* diodeShape = nullptr;
         std::atomic<float>* diodeOutputHP = nullptr;
         std::atomic<float>* diodeOutputLP = nullptr;
+        std::atomic<float>* codecMode = nullptr;
+        std::atomic<float>* codecRate = nullptr;
+        std::atomic<float>* codecBits = nullptr;
+        std::atomic<float>* codecDamage = nullptr;
+        std::atomic<float>* codecTone = nullptr;
+        std::atomic<float>* loFiRate = nullptr;
+        std::atomic<float>* loFiBits = nullptr;
+        std::atomic<float>* loFiClip = nullptr;
+        std::atomic<float>* loFiRectify = nullptr;
+        std::atomic<float>* loFiNoise = nullptr;
+        std::atomic<float>* loFiPreAA = nullptr;
+        std::atomic<float>* loFiPostAA = nullptr;
         std::atomic<float>* lightningSpark = nullptr;
         std::atomic<float>* lightningReact = nullptr;
         std::atomic<float>* lightningClip = nullptr;
@@ -197,6 +222,13 @@ private:
         std::atomic<float>* filterEnabled = nullptr;
         std::atomic<float>* filterCutoff = nullptr;
         std::atomic<float>* filterResonance = nullptr;
+        std::atomic<float>* filterShape = nullptr;
+        std::atomic<float>* envEnabled = nullptr;
+        std::atomic<float>* envSensitivity = nullptr;
+        std::atomic<float>* envAttack = nullptr;
+        std::atomic<float>* envRelease = nullptr;
+        std::atomic<float>* envDepth = nullptr;
+        std::array<std::atomic<float>*, envelopeSlotCount> envTargets {};
         std::atomic<float>* compEnabled = nullptr;
         std::atomic<float>* compAmount = nullptr;
         std::atomic<float>* compPhat = nullptr;
@@ -236,6 +268,8 @@ private:
     static float load(const std::atomic<float>*) noexcept;
     bool isSequencerTargetAssigned(int targetChoice) const noexcept;
     float sequencerTargetDepth(int targetChoice) const noexcept;
+    bool isEnvelopeChoiceAssigned(int targetChoice) const noexcept;
+    float envelopeModulatedValue(int targetChoice, float baseValue) const noexcept;
     float sequencerModulatedValue(
         int targetChoice, float baseValue, float canonicalSequenceValue,
         bool bipolar, bool unipolarNegative,
@@ -275,6 +309,10 @@ private:
         sequencerAnimatedNormalised {};
 
     double currentSampleRate = 44100.0;
+    float envelopeFollowerLevel = 0.0f;
+    float envelopeFollowerModulation = 0.0f;
+    float envelopeFollowerDepth = 0.0f;
+    std::atomic<float> envelopeMeter { 0.0f };
     // The original Hump Crusher DSP units, retained as independent stages.
     crusher::amp::AmpSim ampSimulator;
     crusher::bumpy::Processor bumpyProcessor;
@@ -331,6 +369,20 @@ private:
     LinearSmoother pixelatedDitherValue;
     LinearSmoother pixelatedJitterValue;
     LinearSmoother pixelatedToneValue;
+    crusher::codec::Processor codecProcessor;
+    LinearSmoother codecModeValue;
+    LinearSmoother codecRateValue;
+    LinearSmoother codecBitsValue;
+    LinearSmoother codecDamageValue;
+    LinearSmoother codecToneValue;
+    crusher::lofi::Processor loFiProcessor;
+    LinearSmoother loFiRateValue;
+    LinearSmoother loFiBitsValue;
+    LinearSmoother loFiClipValue;
+    LinearSmoother loFiRectifyValue;
+    LinearSmoother loFiNoiseValue;
+    LinearSmoother loFiPreAAValue;
+    LinearSmoother loFiPostAAValue;
     crusher::lightning::Processor lightningProcessor;
     LinearSmoother lightningSparkValue;
     LinearSmoother lightningReactValue;
@@ -386,6 +438,8 @@ private:
     LinearSmoother humpFoldValue;
     LinearSmoother humpToneValue;
     hump::Filter humpFilter;
+    crusher::filtermodes::Processor alternativeFilter;
+    int previousFilterShape = 0;
     hump::Compressor humpCompressor;
     hump::ParamRamp mechRamp;
     hump::ParamRamp tubeRamp;

@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "CrusherParameterDisplay.h"
 #include "PluginEditor.h"
 #include <cmath>
 #include <array>
@@ -41,6 +42,18 @@ constexpr auto diodeEnvelope = "diodeEnvelope";
 constexpr auto diodeShape = "diodeShape";
 constexpr auto diodeOutputHP = "diodeOutputHP";
 constexpr auto diodeOutputLP = "diodeOutputLP";
+constexpr auto codecMode = "codecMode";
+constexpr auto codecRate = "codecRate";
+constexpr auto codecBits = "codecBits";
+constexpr auto codecDamage = "codecDamage";
+constexpr auto codecTone = "codecTone";
+constexpr auto loFiRate = "loFiRate";
+constexpr auto loFiBits = "loFiBits";
+constexpr auto loFiClip = "loFiClip";
+constexpr auto loFiRectify = "loFiRectify";
+constexpr auto loFiNoise = "loFiNoise";
+constexpr auto loFiPreAA = "loFiPreAA";
+constexpr auto loFiPostAA = "loFiPostAA";
 constexpr auto lightningSpark = "lightningSpark";
 constexpr auto lightningReact = "lightningReact";
 constexpr auto lightningClip = "lightningClip";
@@ -117,6 +130,12 @@ constexpr auto humpTone = "humpTone";
 constexpr auto filterEnabled = "filterEnabled";
 constexpr auto filterCutoff = "filterCutoff";
 constexpr auto filterResonance = "filterResonance";
+constexpr auto filterShape = "filterShape";
+constexpr auto envEnabled = "envEnabled";
+constexpr auto envSensitivity = "envSensitivity";
+constexpr auto envAttack = "envAttack";
+constexpr auto envRelease = "envRelease";
+constexpr auto envDepth = "envDepth";
 constexpr auto compEnabled = "compEnabled";
 constexpr auto compAmount = "compAmount";
 constexpr auto compPhat = "compPhat";
@@ -318,6 +337,65 @@ CrusherAudioProcessor::createParameterLayout()
         {
             return text.getFloatValue() * 0.01f;
         });
+    // Display-only conversions; saved/automated values retain their 0..100 ranges.
+    const auto measuredAttributes = [this](crusher::display::Kind kind)
+    {
+        return juce::AudioParameterFloatAttributes()
+            .withStringFromValueFunction([this, kind](float value, int)
+            {
+                using crusher::display::Kind;
+                const double physical = crusher::display::toPhysical(kind, value,
+                    displaySampleRate.load(std::memory_order_relaxed));
+                if (kind == Kind::codecMode)
+                {
+                    static constexpr const char* names[] =
+                        { "PCM", "mu-law", "A-law", "Predictive", "Spectral" };
+                    return juce::String(names[std::clamp(static_cast<int>(physical), 0, 4)]);
+                }
+                if (crusher::display::isFrequency(kind))
+                    return physical >= 1000.0
+                        ? juce::String(physical * 0.001, physical >= 10000.0 ? 1 : 2) + " kHz"
+                        : juce::String(juce::roundToInt(physical)) + " Hz";
+                if (kind == Kind::filterQ)
+                    return juce::String("Q ") + juce::String(physical, 2);
+                if (kind == Kind::diodeEnv)
+                    return juce::String(physical, 1) + " ms";
+                if (kind == Kind::loFiBits)
+                    return juce::String(physical, 1) + " bits";
+                if (kind == Kind::codecBits)
+                    return juce::String(static_cast<int>(physical)) + " bits";
+                if (kind == Kind::crackleDensity)
+                    return juce::String(physical, 2) + "x";
+                return juce::String(value, 1) + "%";
+            })
+            .withValueFromStringFunction([this, kind](const juce::String& text)
+            {
+                using crusher::display::Kind;
+                const auto input = text.trim();
+                if (kind == Kind::codecMode)
+                {
+                    const juce::StringArray names
+                        { "PCM", "mu-law", "A-law", "Predictive", "Spectral" };
+                    for (int i = 0; i < names.size(); ++i)
+                        if (input.equalsIgnoreCase(names[i]))
+                            return static_cast<float>(crusher::display::toPercent(
+                                kind, static_cast<double>(i), 44100.0));
+                    if (input.equalsIgnoreCase("speech")) return 70.0f;
+                }
+                double physical = input.getDoubleValue();
+                if (crusher::display::isFrequency(kind)
+                    && input.containsIgnoreCase("khz"))
+                    physical *= 1000.0;
+                return static_cast<float>(crusher::display::toPercent(kind,
+                    physical, displaySampleRate.load(std::memory_order_relaxed)));
+            });
+    };
+    const auto attributesFor = [&](const char* parameterId)
+    {
+        const auto kind = crusher::display::kindFor(parameterId);
+        return kind == crusher::display::Kind::percent
+            ? percentageAttributes : measuredAttributes(kind);
+    };
     auto outputRange = juce::NormalisableRange<float>(-24.0f, 12.0f, 0.1f);
     outputRange.setSkewForCentre(0.0f);
 
@@ -327,7 +405,7 @@ CrusherAudioProcessor::createParameterLayout()
         juce::StringArray { "Soft Clip", "Saturation", "Tube", "Rectify",
             "Crackle", "Lightning", "Amp", "Bumpy", "Asym", "Razor",
             "Pixelated", "Comb", "Stressed", "Samurai", "Fresh",
-            "Hard Clip", "Fuzz", "Hump", "Diode Clip" }, 6));
+            "Hard Clip", "Fuzz", "Hump", "Diode Clip", "Lo-Fi", "Codec" }, 6));
     // Shared wet-engine controls: stereo is the original, untouched default.
     layout.push_back(std::make_unique<APC>(
         juce::ParameterID(ParameterIds::distMode, 1), "Distortion Input Mode",
@@ -350,7 +428,7 @@ CrusherAudioProcessor::createParameterLayout()
         layout.push_back(std::make_unique<APF>(
             juce::ParameterID(item.first, 1), item.second,
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 0.0f,
-            percentageAttributes));
+            attributesFor(item.first)));
 
     // Bumpy-only ripple and tonal parameters. 50% is the original character.
     for (const auto& item : std::array<std::pair<const char*, const char*>, 5> {{
@@ -362,7 +440,7 @@ CrusherAudioProcessor::createParameterLayout()
         layout.push_back(std::make_unique<APF>(
             juce::ParameterID(item.first, 1), item.second,
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
-            percentageAttributes));
+            attributesFor(item.first)));
 
     // Comb-only resonant-delay controls; 50% preserves the existing sound.
     for (const auto& item : std::array<std::pair<const char*, const char*>, 5> {{
@@ -374,7 +452,7 @@ CrusherAudioProcessor::createParameterLayout()
         layout.push_back(std::make_unique<APF>(
             juce::ParameterID(item.first, 1), item.second,
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
-            percentageAttributes));
+            attributesFor(item.first)));
 
     // Crackle: neutral positions retain the original stochastic sound.
     for (const auto& item : std::array<std::pair<const char*, const char*>, 5> {{
@@ -386,7 +464,7 @@ CrusherAudioProcessor::createParameterLayout()
         layout.push_back(std::make_unique<APF>(
             juce::ParameterID(item.first, 1), item.second,
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
-            percentageAttributes));
+            attributesFor(item.first)));
 
     // Original diode-inspired clipper; these are new controls, not AIR DSP.
     for (const auto& item : std::array<std::pair<const char*, const char*>, 5> {{
@@ -398,7 +476,25 @@ CrusherAudioProcessor::createParameterLayout()
         layout.push_back(std::make_unique<APF>(
             juce::ParameterID(item.first, 1), item.second,
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
-            percentageAttributes));
+            attributesFor(item.first)));
+
+    // Original Lo-Fi combination processor. No existing distortion DSP is altered.
+    for (const auto& item : std::array<std::pair<const char*, const char*>, 7> {{
+             { ParameterIds::loFiRate, "Lo-Fi Rate" },
+             { ParameterIds::loFiBits, "Lo-Fi Bits" },
+             { ParameterIds::loFiClip, "Lo-Fi Clip" },
+             { ParameterIds::loFiRectify, "Lo-Fi Rectify" },
+             { ParameterIds::loFiNoise, "Lo-Fi Noise" },
+             { ParameterIds::loFiPreAA, "Lo-Fi Pre Anti-Alias" },
+             { ParameterIds::loFiPostAA, "Lo-Fi Post Anti-Alias" } }})
+    {
+        const bool midDefault = juce::String(item.first) == ParameterIds::loFiRate
+            || juce::String(item.first) == ParameterIds::loFiBits;
+        layout.push_back(std::make_unique<APF>(
+            juce::ParameterID(item.first, 1), item.second,
+            juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f),
+            midDefault ? 50.0f : 0.0f, attributesFor(item.first)));
+    }
 
     // Pixelated: neutral 50% preserves original sample hold, quantiser and dither.
     for (const auto& item : std::array<std::pair<const char*, const char*>, 5> {{
@@ -410,7 +506,7 @@ CrusherAudioProcessor::createParameterLayout()
         layout.push_back(std::make_unique<APF>(
             juce::ParameterID(item.first, 1), item.second,
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
-            percentageAttributes));
+            attributesFor(item.first)));
 
     // Rectify: original full-wave shaper stays exact at neutral defaults.
     for (const auto& item : std::array<std::pair<const char*, const char*>, 4> {{
@@ -421,7 +517,7 @@ CrusherAudioProcessor::createParameterLayout()
         layout.push_back(std::make_unique<APF>(
             juce::ParameterID(item.first, 1), item.second,
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
-            percentageAttributes));
+            attributesFor(item.first)));
     layout.push_back(std::make_unique<APF>(
         juce::ParameterID(ParameterIds::rectifyFold, 1), "Rectify Fold",
         juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 0.0f,
@@ -437,7 +533,7 @@ CrusherAudioProcessor::createParameterLayout()
         layout.push_back(std::make_unique<APF>(
             juce::ParameterID(item.first, 1), item.second,
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
-            percentageAttributes));
+            attributesFor(item.first)));
 
     // Tube-only: neutral positions retain the original standalone Tube shaper.
     for (const auto& item : std::array<std::pair<const char*, const char*>, 5> {{
@@ -449,7 +545,7 @@ CrusherAudioProcessor::createParameterLayout()
         layout.push_back(std::make_unique<APF>(
             juce::ParameterID(item.first, 1), item.second,
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
-            percentageAttributes));
+            attributesFor(item.first)));
 
     // Stressed: compression/folding controls are neutral at 50%, OUTPUT 0 dB.
     for (const auto& item : std::array<std::pair<const char*, const char*>, 5> {{
@@ -461,7 +557,7 @@ CrusherAudioProcessor::createParameterLayout()
         layout.push_back(std::make_unique<APF>(
             juce::ParameterID(item.first, 1), item.second,
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
-            percentageAttributes));
+            attributesFor(item.first)));
 
     // Saturation: neutral controls retain the original open arctangent curve.
     for (const auto& item : std::array<std::pair<const char*, const char*>, 5> {{
@@ -473,7 +569,7 @@ CrusherAudioProcessor::createParameterLayout()
         layout.push_back(std::make_unique<APF>(
             juce::ParameterID(item.first, 1), item.second,
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
-            percentageAttributes));
+            attributesFor(item.first)));
 
     // Samurai: original blade path remains exact with neutral settings.
     for (const auto& item : std::array<std::pair<const char*, const char*>, 5> {{
@@ -485,7 +581,7 @@ CrusherAudioProcessor::createParameterLayout()
         layout.push_back(std::make_unique<APF>(
             juce::ParameterID(item.first, 1), item.second,
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
-            percentageAttributes));
+            attributesFor(item.first)));
 
     // Razor: 50% means the original high-frequency shaper; OUTPUT is unity at 0 dB.
     for (const auto& item : std::array<std::pair<const char*, const char*>, 5> {{
@@ -497,7 +593,7 @@ CrusherAudioProcessor::createParameterLayout()
         layout.push_back(std::make_unique<APF>(
             juce::ParameterID(item.first, 1), item.second,
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
-            percentageAttributes));
+            attributesFor(item.first)));
 
     // Lightning: neutral 50% controls preserve its original spark/noise clipper.
     for (const auto& item : std::array<std::pair<const char*, const char*>, 5> {{
@@ -509,7 +605,7 @@ CrusherAudioProcessor::createParameterLayout()
         layout.push_back(std::make_unique<APF>(
             juce::ParameterID(item.first, 1), item.second,
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
-            percentageAttributes));
+            attributesFor(item.first)));
 
     // Fresh-only exciter and saturation controls. 50% retains the original tone.
     for (const auto& item : std::array<std::pair<const char*, const char*>, 5> {{
@@ -521,7 +617,7 @@ CrusherAudioProcessor::createParameterLayout()
         layout.push_back(std::make_unique<APF>(
             juce::ParameterID(item.first, 1), item.second,
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
-            percentageAttributes));
+            attributesFor(item.first)));
 
     // Hard Clip: 50% retains the original threshold, bias, hard knee and tone.
     // FOLD is neutral at zero; OUTPUT is neutral at 0 dB.
@@ -533,7 +629,7 @@ CrusherAudioProcessor::createParameterLayout()
         layout.push_back(std::make_unique<APF>(
             juce::ParameterID(item.first, 1), item.second,
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
-            percentageAttributes));
+            attributesFor(item.first)));
     layout.push_back(std::make_unique<APF>(
         juce::ParameterID(ParameterIds::hardClipFold, 1), "Hard Clip Fold",
         juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 0.0f,
@@ -550,7 +646,7 @@ CrusherAudioProcessor::createParameterLayout()
         layout.push_back(std::make_unique<APF>(
             juce::ParameterID(item.first, 1), item.second,
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
-            percentageAttributes));
+            attributesFor(item.first)));
 
     // Asym-only tonal and waveshaping controls, with neutral defaults.
     for (const auto& item : std::array<std::pair<const char*, const char*>, 2> {{
@@ -559,14 +655,14 @@ CrusherAudioProcessor::createParameterLayout()
         layout.push_back(std::make_unique<APF>(
             juce::ParameterID(item.first, 1), item.second,
             juce::NormalisableRange<float>(-100.0f, 100.0f, 0.1f), 0.0f,
-            percentageAttributes));
+            attributesFor(item.first)));
     for (const auto& item : std::array<std::pair<const char*, const char*>, 2> {{
              { ParameterIds::asymShape, "Asym Shape" },
              { ParameterIds::asymTone, "Asym Tone" } }})
         layout.push_back(std::make_unique<APF>(
             juce::ParameterID(item.first, 1), item.second,
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
-            percentageAttributes));
+            attributesFor(item.first)));
 
     // Global seven-band EQ, bypassed by default for a neutral init patch.
     layout.push_back(std::make_unique<APB>(
@@ -618,7 +714,7 @@ CrusherAudioProcessor::createParameterLayout()
         layout.push_back(std::make_unique<APF>(
             juce::ParameterID(item.first, 1), item.second,
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
-            percentageAttributes));
+            attributesFor(item.first)));
     layout.push_back(std::make_unique<APF>(
         juce::ParameterID(ParameterIds::humpFold, 1), "Hump Fold",
         juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 0.0f,
@@ -628,10 +724,32 @@ CrusherAudioProcessor::createParameterLayout()
     layout.push_back(std::make_unique<APF>(
         juce::ParameterID(ParameterIds::filterCutoff, 1), "Filter Cutoff",
         juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 100.0f,
-        percentageAttributes));
+        attributesFor(ParameterIds::filterCutoff)));
     layout.push_back(std::make_unique<APF>(
         juce::ParameterID(ParameterIds::filterResonance, 1), "Filter Resonance",
         juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 0.0f,
+        attributesFor(ParameterIds::filterResonance)));
+    layout.push_back(std::make_unique<APC>(
+        juce::ParameterID(ParameterIds::filterShape, 1), "Filter Shape",
+        juce::StringArray { "Low-pass", "Band-pass", "High-pass" }, 0));
+    // The global envelope is off by default, preserving all old sounds.
+    layout.push_back(std::make_unique<APB>(
+        juce::ParameterID(ParameterIds::envEnabled, 1), "Envelope Enabled", false));
+    layout.push_back(std::make_unique<APF>(
+        juce::ParameterID(ParameterIds::envSensitivity, 1), "Envelope Sensitivity",
+        juce::NormalisableRange<float>(-24.0f, 24.0f, 0.1f), 6.0f,
+        juce::AudioParameterFloatAttributes().withLabel("dB")));
+    layout.push_back(std::make_unique<APF>(
+        juce::ParameterID(ParameterIds::envAttack, 1), "Envelope Attack",
+        juce::NormalisableRange<float>(1.0f, 200.0f, 0.1f, 0.4f), 15.0f,
+        juce::AudioParameterFloatAttributes().withLabel("ms")));
+    layout.push_back(std::make_unique<APF>(
+        juce::ParameterID(ParameterIds::envRelease, 1), "Envelope Release",
+        juce::NormalisableRange<float>(20.0f, 1500.0f, 0.1f, 0.4f), 250.0f,
+        juce::AudioParameterFloatAttributes().withLabel("ms")));
+    layout.push_back(std::make_unique<APF>(
+        juce::ParameterID(ParameterIds::envDepth, 1), "Envelope Depth",
+        juce::NormalisableRange<float>(-100.0f, 100.0f, 0.1f), 65.0f,
         percentageAttributes));
     layout.push_back(std::make_unique<APB>(
         juce::ParameterID(ParameterIds::compEnabled, 1), "Compressor On", false));
@@ -732,6 +850,11 @@ CrusherAudioProcessor::createParameterLayout()
             targetDepthAttributes));
     }
 
+    for (int slot = 0; slot < envelopeSlotCount; ++slot)
+        layout.push_back(std::make_unique<APC>(
+            juce::ParameterID("envTarget" + juce::String(slot + 1), 1),
+            "Envelope Target " + juce::String(slot + 1), targetNames, 0));
+
     layout.push_back(std::make_unique<APF>(
         juce::ParameterID("sequencerGateShortLength", 1),
         "Sequencer Gate Short Length",
@@ -751,6 +874,23 @@ CrusherAudioProcessor::createParameterLayout()
     layout.push_back(std::make_unique<APC>(
         juce::ParameterID("sequencerGateMode", 1), "Sequencer Gate Mode",
         juce::StringArray { "Input", "Effect", "Output", "Off" }, 0));
+
+    // Codec: an original model with five independent, host-automatable controls.
+    // The new type is appended to preserve all existing numeric type IDs.
+    for (const auto& item : std::array<std::pair<const char*, const char*>, 5> {{
+             { ParameterIds::codecMode, "Codec Algorithm" },
+             { ParameterIds::codecRate, "Codec Rate" },
+             { ParameterIds::codecBits, "Codec Bits" },
+             { ParameterIds::codecDamage, "Codec Damage" },
+             { ParameterIds::codecTone, "Codec Tone" } }})
+    {
+        const float initial = juce::String(item.first) == ParameterIds::codecMode ? 90.0f
+            : (juce::String(item.first) == ParameterIds::codecRate ? 35.0f : 50.0f);
+        layout.push_back(std::make_unique<APF>(
+            juce::ParameterID(item.first, 1), item.second,
+            juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), initial,
+            attributesFor(item.first)));
+    }
 
     return { layout.begin(), layout.end() };
 }
@@ -792,6 +932,18 @@ void CrusherAudioProcessor::bindParameterPointers()
     raw.diodeShape = bind(ParameterIds::diodeShape);
     raw.diodeOutputHP = bind(ParameterIds::diodeOutputHP);
     raw.diodeOutputLP = bind(ParameterIds::diodeOutputLP);
+    raw.codecMode = bind(ParameterIds::codecMode);
+    raw.codecRate = bind(ParameterIds::codecRate);
+    raw.codecBits = bind(ParameterIds::codecBits);
+    raw.codecDamage = bind(ParameterIds::codecDamage);
+    raw.codecTone = bind(ParameterIds::codecTone);
+    raw.loFiRate = bind(ParameterIds::loFiRate);
+    raw.loFiBits = bind(ParameterIds::loFiBits);
+    raw.loFiClip = bind(ParameterIds::loFiClip);
+    raw.loFiRectify = bind(ParameterIds::loFiRectify);
+    raw.loFiNoise = bind(ParameterIds::loFiNoise);
+    raw.loFiPreAA = bind(ParameterIds::loFiPreAA);
+    raw.loFiPostAA = bind(ParameterIds::loFiPostAA);
     raw.lightningSpark = bind(ParameterIds::lightningSpark);
     raw.lightningReact = bind(ParameterIds::lightningReact);
     raw.lightningClip = bind(ParameterIds::lightningClip);
@@ -875,6 +1027,15 @@ void CrusherAudioProcessor::bindParameterPointers()
     raw.filterEnabled = bind(ParameterIds::filterEnabled);
     raw.filterCutoff = bind(ParameterIds::filterCutoff);
     raw.filterResonance = bind(ParameterIds::filterResonance);
+    raw.filterShape = bind(ParameterIds::filterShape);
+    raw.envEnabled = bind(ParameterIds::envEnabled);
+    raw.envSensitivity = bind(ParameterIds::envSensitivity);
+    raw.envAttack = bind(ParameterIds::envAttack);
+    raw.envRelease = bind(ParameterIds::envRelease);
+    raw.envDepth = bind(ParameterIds::envDepth);
+    for (int slot = 0; slot < envelopeSlotCount; ++slot)
+        raw.envTargets[static_cast<size_t>(slot)] = bind(
+            "envTarget" + juce::String(slot + 1));
     raw.compEnabled = bind(ParameterIds::compEnabled);
     raw.compAmount = bind(ParameterIds::compAmount);
     raw.compPhat = bind(ParameterIds::compPhat);
@@ -938,6 +1099,112 @@ bool CrusherAudioProcessor::isSequencerTargetAssigned(int targetChoice) const no
     return false;
 }
 
+bool CrusherAudioProcessor::isEnvelopeChoiceAssigned(int choice) const noexcept
+{
+    if (choice <= 0) return false;
+    for (auto* target : raw.envTargets)
+        if (juce::roundToInt(load(target)) == choice)
+            return true;
+    return false;
+}
+
+bool CrusherAudioProcessor::isEnvelopeTargetAssigned(
+    const juce::String& parameterId) const noexcept
+{
+    return isEnvelopeChoiceAssigned(
+        crusher::sequencer::targetChoiceForParameter(parameterId));
+}
+
+int CrusherAudioProcessor::getEnvelopeAssignmentCount() const noexcept
+{
+    int count = 0;
+    for (auto* target : raw.envTargets)
+        if (juce::roundToInt(load(target)) > 0) ++count;
+    return count;
+}
+
+bool CrusherAudioProcessor::assignEnvelopeTarget(const juce::String& parameterId)
+{
+    const int choice = crusher::sequencer::targetChoiceForParameter(parameterId);
+    if (choice <= 0) return false;
+    if (isEnvelopeChoiceAssigned(choice)) return true;
+    for (int slot = 0; slot < envelopeSlotCount; ++slot)
+        if (juce::roundToInt(load(raw.envTargets[static_cast<size_t>(slot)])) == 0)
+        {
+            auto* parameter = parameters.getParameter("envTarget" + juce::String(slot + 1));
+            if (parameter == nullptr) return false;
+            parameter->beginChangeGesture();
+            parameter->setValueNotifyingHost(parameter->convertTo0to1(
+                static_cast<float>(choice)));
+            parameter->endChangeGesture();
+            if (auto* enabled = parameters.getParameter("envEnabled"))
+            {
+                enabled->beginChangeGesture();
+                enabled->setValueNotifyingHost(enabled->convertTo0to1(1.0f));
+                enabled->endChangeGesture();
+            }
+            return true;
+        }
+    return false;
+}
+
+bool CrusherAudioProcessor::clearEnvelopeTarget(const juce::String& parameterId)
+{
+    const int choice = crusher::sequencer::targetChoiceForParameter(parameterId);
+    if (choice <= 0) return false;
+    for (int slot = 0; slot < envelopeSlotCount; ++slot)
+        if (juce::roundToInt(load(raw.envTargets[static_cast<size_t>(slot)])) == choice)
+        {
+            if (auto* target = parameters.getParameter("envTarget" + juce::String(slot + 1)))
+            {
+                target->beginChangeGesture();
+                target->setValueNotifyingHost(target->convertTo0to1(0.0f));
+                target->endChangeGesture();
+            }
+            return true;
+        }
+    return false;
+}
+
+void CrusherAudioProcessor::clearAllEnvelopeTargets()
+{
+    for (int slot = 0; slot < envelopeSlotCount; ++slot)
+        if (auto* target = parameters.getParameter("envTarget" + juce::String(slot + 1)))
+        {
+            target->beginChangeGesture();
+            target->setValueNotifyingHost(target->convertTo0to1(0.0f));
+            target->endChangeGesture();
+        }
+}
+
+float CrusherAudioProcessor::envelopeModulatedValue(
+    int targetChoice, float baseValue) const noexcept
+{
+    if (targetChoice <= 0
+        || targetChoice > static_cast<int>(sequencerTargetParameters.size())
+        || load(raw.envEnabled) < 0.5f
+        || ! isEnvelopeChoiceAssigned(targetChoice))
+        return baseValue;
+    auto* parameter = sequencerTargetParameters[static_cast<size_t>(targetChoice - 1)];
+    if (parameter == nullptr) return baseValue;
+    const float normal = juce::jlimit(0.0f, 1.0f,
+        parameter->convertTo0to1(baseValue));
+    const float shift = envelopeFollowerModulation * envelopeFollowerDepth;
+    // Store the unmodulated/sequenced value too. Otherwise, when input audio
+    // falls silent the graph/knob could freeze at its last ENV peak.
+    if (shift == 0.0f)
+    {
+        sequencerAnimatedNormalised[static_cast<size_t>(targetChoice - 1)].store(
+            normal, std::memory_order_relaxed);
+        return baseValue;
+    }
+    const float altered = juce::jlimit(0.0f, 1.0f,
+        normal + (shift >= 0.0f ? shift * (1.0f - normal) : shift * normal));
+    sequencerAnimatedNormalised[static_cast<size_t>(targetChoice - 1)].store(
+        altered, std::memory_order_relaxed);
+    return parameter->convertFrom0to1(altered);
+}
+
 float CrusherAudioProcessor::sequencerTargetDepth(int targetChoice) const noexcept
 {
     if (targetChoice <= 0)
@@ -998,8 +1265,10 @@ std::optional<float> CrusherAudioProcessor::getSequencerAnimatedNormalised(
     const int choice = crusher::sequencer::targetChoiceForParameter(parameterId);
     if (choice <= 0
         || choice > static_cast<int>(sequencerAnimatedNormalised.size())
-        || load(raw.sequencerEnabled) < 0.5f
-        || ! isSequencerTargetAssigned(choice))
+        || ! ((load(raw.sequencerEnabled) >= 0.5f
+               && isSequencerTargetAssigned(choice))
+              || (load(raw.envEnabled) >= 0.5f
+               && isEnvelopeChoiceAssigned(choice))))
         return std::nullopt;
     const float value = sequencerAnimatedNormalised[
         static_cast<size_t>(choice - 1)].load(std::memory_order_relaxed);
@@ -1022,9 +1291,12 @@ void CrusherAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock
 {
     juce::ignoreUnused(samplesPerBlock);
     currentSampleRate = juce::jmax(1.0, sampleRate);
+    displaySampleRate.store(currentSampleRate, std::memory_order_relaxed);
     rectifyProcessor.prepare(currentSampleRate);
     crackleProcessor.prepare(currentSampleRate);
     diodeProcessor.prepare(currentSampleRate);
+    loFiProcessor.prepare(currentSampleRate);
+    codecProcessor.prepare(currentSampleRate);
     lightningProcessor.prepare(currentSampleRate);
     pixelatedProcessor.prepare(currentSampleRate);
     razorProcessor.prepare(currentSampleRate);
@@ -1046,6 +1318,12 @@ void CrusherAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock
     ampSimulator.setSampleRate(currentSampleRate);
     graphicEQ.setSampleRate(currentSampleRate);
     humpFilter.setSampleRate(currentSampleRate);
+    alternativeFilter.prepare(currentSampleRate);
+    previousFilterShape = 0;
+    envelopeFollowerLevel = 0.0f;
+    envelopeFollowerModulation = 0.0f;
+    envelopeFollowerDepth = 0.0f;
+    envelopeMeter.store(0.0f, std::memory_order_relaxed);
     humpCompressor.setSampleRate(currentSampleRate);
     for (auto* ramp : { &mechRamp, &tubeRamp, &filterCutoffRamp,
                         &filterResonanceRamp, &compAmountRamp })
@@ -1091,6 +1369,18 @@ void CrusherAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock
     resetSmoother(diodeShapeValue, load(raw.diodeShape) * 0.01f);
     resetSmoother(diodeOutputHPValue, load(raw.diodeOutputHP) * 0.01f);
     resetSmoother(diodeOutputLPValue, load(raw.diodeOutputLP) * 0.01f);
+    resetSmoother(codecModeValue, load(raw.codecMode) * 0.01f);
+    resetSmoother(codecRateValue, load(raw.codecRate) * 0.01f);
+    resetSmoother(codecBitsValue, load(raw.codecBits) * 0.01f);
+    resetSmoother(codecDamageValue, load(raw.codecDamage) * 0.01f);
+    resetSmoother(codecToneValue, load(raw.codecTone) * 0.01f);
+    resetSmoother(loFiRateValue, load(raw.loFiRate) * 0.01f);
+    resetSmoother(loFiBitsValue, load(raw.loFiBits) * 0.01f);
+    resetSmoother(loFiClipValue, load(raw.loFiClip) * 0.01f);
+    resetSmoother(loFiRectifyValue, load(raw.loFiRectify) * 0.01f);
+    resetSmoother(loFiNoiseValue, load(raw.loFiNoise) * 0.01f);
+    resetSmoother(loFiPreAAValue, load(raw.loFiPreAA) * 0.01f);
+    resetSmoother(loFiPostAAValue, load(raw.loFiPostAA) * 0.01f);
     resetSmoother(lightningSparkValue, load(raw.lightningSpark) * 0.01f);
     resetSmoother(lightningReactValue, load(raw.lightningReact) * 0.01f);
     resetSmoother(lightningClipValue, load(raw.lightningClip) * 0.01f);
@@ -1183,6 +1473,11 @@ void CrusherAudioProcessor::releaseResources()
 {
     resetDistortionState();
     humpFilter.reset();
+    alternativeFilter.reset();
+    envelopeFollowerLevel = 0.0f;
+    envelopeFollowerModulation = 0.0f;
+    envelopeFollowerDepth = 0.0f;
+    envelopeMeter.store(0.0f, std::memory_order_relaxed);
     humpCompressor.reset();
     ampSimulator.reset();
     asymProcessor.reset();
@@ -1227,7 +1522,48 @@ void CrusherAudioProcessor::processBlock(
         humpProcessor.reset();
         resetDistortionState();
         humpFilter.reset();
+        alternativeFilter.reset();
+        envelopeFollowerLevel = 0.0f;
         humpCompressor.reset();
+    }
+
+    // Follow the raw incoming audio (pre-distortion), independent of model.
+    // Parameters use per-block control-rate modulation as the sequencer does.
+    // Disabled or unassigned: no per-sample detector work at all.
+    const bool followerOn = load(raw.envEnabled) >= 0.5f
+        && getEnvelopeAssignmentCount() != 0;
+    if (followerOn)
+    {
+        const float attackMs = juce::jlimit(1.0f, 200.0f, load(raw.envAttack));
+        const float releaseMs = juce::jlimit(20.0f, 1500.0f, load(raw.envRelease));
+        const float attackCoeff = std::exp(-1000.0f
+            / (attackMs * static_cast<float>(currentSampleRate)));
+        const float releaseCoeff = std::exp(-1000.0f
+            / (releaseMs * static_cast<float>(currentSampleRate)));
+        const auto* left = buffer.getReadPointer(0);
+        const auto* right = activeChannels > 1 ? buffer.getReadPointer(1) : left;
+        for (int i = 0; i < sampleCount; ++i)
+        {
+            const float magnitude = juce::jmax(std::abs(left[i]), std::abs(right[i]));
+            const float level = std::isfinite(magnitude) ? magnitude : 0.0f;
+            const float coeff = level > envelopeFollowerLevel ? attackCoeff : releaseCoeff;
+            envelopeFollowerLevel = coeff * envelopeFollowerLevel
+                + (1.0f - coeff) * juce::jmin(16.0f, level);
+        }
+        const float sensitivityGain = juce::Decibels::decibelsToGain(
+            juce::jlimit(-24.0f, 24.0f, load(raw.envSensitivity)));
+        envelopeFollowerModulation = juce::jlimit(0.0f, 1.0f,
+            envelopeFollowerLevel * sensitivityGain);
+        envelopeFollowerDepth = juce::jlimit(-1.0f, 1.0f,
+            load(raw.envDepth) * 0.01f);
+        envelopeMeter.store(envelopeFollowerModulation, std::memory_order_relaxed);
+    }
+    else
+    {
+        envelopeFollowerLevel = 0.0f;
+        envelopeFollowerModulation = 0.0f;
+        envelopeFollowerDepth = 0.0f;
+        envelopeMeter.store(0.0f, std::memory_order_relaxed);
     }
 
     const bool sequenceEnabled = load(raw.sequencerEnabled) >= 0.5f;
@@ -1287,10 +1623,11 @@ void CrusherAudioProcessor::processBlock(
         int target, const std::atomic<float>* parameter)
     {
         const float base = load(parameter);
-        return sequenceEnabled
+        const float sequencedBase = sequenceEnabled
             ? sequencerModulatedValue(target, base,
                 previousSequencerCanonical, bipolar, unipolarNegative)
             : base;
+        return envelopeModulatedValue(target, sequencedBase);
     };
     const float peak = juce::jlimit(-1.0f, 1.0f, modulatedPrevious(
         crusher::sequencer::sequencerDepthTargetChoice, raw.sequencerPeak));
@@ -1359,10 +1696,11 @@ void CrusherAudioProcessor::processBlock(
         int target, const std::atomic<float>* parameter)
     {
         const float base = load(parameter);
-        return sequenceEnabled
+        const float sequencedBase = sequenceEnabled
             ? sequencerModulatedValue(target, base, canonical,
                 bipolar, unipolarNegative)
             : base;
+        return envelopeModulatedValue(target, sequencedBase);
     };
     distortionEnabledValue.setTargetValue(
         load(raw.distortionEnabled) >= 0.5f ? 1.0f : 0.0f);
@@ -1394,7 +1732,7 @@ void CrusherAudioProcessor::processBlock(
     const bool filterOn = load(raw.filterEnabled) >= 0.5f;
     const bool compOn = load(raw.compEnabled) >= 0.5f;
     // Dispatch only the selected algorithm; during a short type-change
-    // crossfade process the outgoing model too, never all 19 engines.
+    // crossfade process the outgoing model too, never all 21 engines.
     const int selectedDistortion = juce::jlimit(
         0, distortionTypeCount - 1,
         static_cast<int>(std::lround(load(raw.distortionType))));
@@ -1430,6 +1768,10 @@ void CrusherAudioProcessor::processBlock(
         || (transitioningModels && previousDistortionType == 9));
     const bool pixelatedInUse = distortionMayRun && (currentDistortionType == 10
         || (transitioningModels && previousDistortionType == 10));
+    const bool codecInUse = distortionMayRun && (currentDistortionType == 20
+        || (transitioningModels && previousDistortionType == 20));
+    const bool loFiInUse = distortionMayRun && (currentDistortionType == 19
+        || (transitioningModels && previousDistortionType == 19));
     const bool lightningInUse = distortionMayRun && (currentDistortionType == 5
         || (transitioningModels && previousDistortionType == 5));
     const bool diodeInUse = distortionMayRun && (currentDistortionType == 18
@@ -1477,6 +1819,44 @@ void CrusherAudioProcessor::processBlock(
         sequenced(crusher::sequencer::diodeOutputHPTargetChoice, raw.diodeOutputHP) * 0.01f));
     updateDiodeControl(diodeOutputLPValue, juce::jlimit(0.0f, 1.0f,
         sequenced(crusher::sequencer::diodeOutputLPTargetChoice, raw.diodeOutputLP) * 0.01f));
+
+    const auto updateCodecControl = [codecInUse](LinearSmoother& smoother,
+                                                 float target) noexcept
+    {
+        if (codecInUse) smoother.setTargetValue(target);
+        else smoother.setCurrentAndTargetValue(target);
+    };
+    updateCodecControl(codecModeValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::codecModeTargetChoice, raw.codecMode) * 0.01f));
+    updateCodecControl(codecRateValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::codecRateTargetChoice, raw.codecRate) * 0.01f));
+    updateCodecControl(codecBitsValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::codecBitsTargetChoice, raw.codecBits) * 0.01f));
+    updateCodecControl(codecDamageValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::codecDamageTargetChoice, raw.codecDamage) * 0.01f));
+    updateCodecControl(codecToneValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::codecToneTargetChoice, raw.codecTone) * 0.01f));
+
+    const auto updateLoFiControl = [loFiInUse](LinearSmoother& smoother,
+                                               float target) noexcept
+    {
+        if (loFiInUse) smoother.setTargetValue(target);
+        else smoother.setCurrentAndTargetValue(target);
+    };
+    updateLoFiControl(loFiRateValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::loFiRateTargetChoice, raw.loFiRate) * 0.01f));
+    updateLoFiControl(loFiBitsValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::loFiBitsTargetChoice, raw.loFiBits) * 0.01f));
+    updateLoFiControl(loFiClipValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::loFiClipTargetChoice, raw.loFiClip) * 0.01f));
+    updateLoFiControl(loFiRectifyValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::loFiRectifyTargetChoice, raw.loFiRectify) * 0.01f));
+    updateLoFiControl(loFiNoiseValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::loFiNoiseTargetChoice, raw.loFiNoise) * 0.01f));
+    updateLoFiControl(loFiPreAAValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::loFiPreAATargetChoice, raw.loFiPreAA) * 0.01f));
+    updateLoFiControl(loFiPostAAValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::loFiPostAATargetChoice, raw.loFiPostAA) * 0.01f));
 
     // Do not perform Bumpy DSP or advance its smoothers for inactive models.
     const auto updateBumpyControl = [bumpyInUse](LinearSmoother& smoother,
@@ -1964,6 +2344,28 @@ void CrusherAudioProcessor::processBlock(
                 controls.outputLP = diodeOutputLPValue.getNextValue();
                 diodeProcessor.setControls(controls);
             }
+            if (codecInUse)
+            {
+                crusher::codec::Controls controls;
+                controls.mode = codecModeValue.getNextValue();
+                controls.rate = codecRateValue.getNextValue();
+                controls.bits = codecBitsValue.getNextValue();
+                controls.damage = codecDamageValue.getNextValue();
+                controls.tone = codecToneValue.getNextValue();
+                codecProcessor.setControls(controls);
+            }
+            if (loFiInUse)
+            {
+                crusher::lofi::Controls controls;
+                controls.rate = loFiRateValue.getNextValue();
+                controls.bits = loFiBitsValue.getNextValue();
+                controls.clip = loFiClipValue.getNextValue();
+                controls.rectify = loFiRectifyValue.getNextValue();
+                controls.noise = loFiNoiseValue.getNextValue();
+                controls.preAA = loFiPreAAValue.getNextValue();
+                controls.postAA = loFiPostAAValue.getNextValue();
+                loFiProcessor.setControls(controls);
+            }
             if (pixelatedInUse)
             {
                 crusher::pixelated::Controls controls;
@@ -2168,11 +2570,26 @@ void CrusherAudioProcessor::processBlock(
             }
         }
 
-        // Original Hump resonant low-pass and stereo-linked fat limiter.
-        // It receives the output of the selected model's pre-filter stage.
+        // LP remains the original Hump processing, byte-identical at the
+        // default shape. BP and HP are opt-in alternatives for every model.
         if (filterOn)
-            humpFilter.process(wetLeft.data(), wetRight.data(),
-                               count, cutoff, resonance);
+        {
+            const int shape = juce::jlimit(0, 2,
+                juce::roundToInt(load(raw.filterShape)));
+            if (shape != previousFilterShape)
+            {
+                alternativeFilter.reset();
+                if (shape == 0)
+                    humpFilter.reset();
+                previousFilterShape = shape;
+            }
+            if (shape == 0)
+                humpFilter.process(wetLeft.data(), wetRight.data(),
+                                   count, cutoff, resonance);
+            else
+                alternativeFilter.process(wetLeft.data(), wetRight.data(),
+                                          count, cutoff, resonance, shape);
+        }
 
         // Hump Tube follows the filter exactly as in HumpCrusher; no extra
         // template distortion is inserted between those two stages.

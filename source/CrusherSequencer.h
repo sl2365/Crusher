@@ -52,7 +52,7 @@ struct TargetInfo
     const char* displayName;
 };
 
-inline constexpr std::array<TargetInfo, 122> targets
+inline constexpr std::array<TargetInfo, 134> targets
 {{
     { "distOutput", "Dist Output" },
     { "mix", "Dry / Wet" },
@@ -177,6 +177,18 @@ inline constexpr std::array<TargetInfo, 122> targets
     { "eq6Freq", "EQ 6 Freq" },
     { "eq7Gain", "EQ 7 Gain" },
     { "eq7Freq", "EQ 7 Freq" },
+    { "loFiRate", "Lo-Fi Rate" },
+    { "loFiBits", "Lo-Fi Bits" },
+    { "loFiClip", "Lo-Fi Clip" },
+    { "loFiRectify", "Lo-Fi Rectify" },
+    { "loFiNoise", "Lo-Fi Noise" },
+    { "loFiPreAA", "Lo-Fi Pre AA" },
+    { "loFiPostAA", "Lo-Fi Post AA" },
+    { "codecMode", "Codec Mode" },
+    { "codecRate", "Codec Rate" },
+    { "codecBits", "Codec Bits" },
+    { "codecDamage", "Codec Damage" },
+    { "codecTone", "Codec Tone" },
 }};
 
 inline constexpr int distOutputTargetChoice = 1;
@@ -297,8 +309,24 @@ inline constexpr int eqHorizontalTargetChoice(int band) noexcept
 {
     return eqTargetFirstChoice + band * 2 + 1;
 }
-static_assert(eqHorizontalTargetChoice(6) == static_cast<int>(targets.size()),
-              "EQ sequencer choices must match the target table");
+static_assert(eqHorizontalTargetChoice(6) == 122,
+              "Existing EQ target IDs must stay at 109-122");
+inline constexpr int loFiRateTargetChoice = 123;
+inline constexpr int loFiBitsTargetChoice = 124;
+inline constexpr int loFiClipTargetChoice = 125;
+inline constexpr int loFiRectifyTargetChoice = 126;
+inline constexpr int loFiNoiseTargetChoice = 127;
+inline constexpr int loFiPreAATargetChoice = 128;
+inline constexpr int loFiPostAATargetChoice = 129;
+static_assert(loFiPostAATargetChoice == 129,
+              "Existing Lo-Fi target IDs must not change");
+inline constexpr int codecModeTargetChoice = 130;
+inline constexpr int codecRateTargetChoice = 131;
+inline constexpr int codecBitsTargetChoice = 132;
+inline constexpr int codecDamageTargetChoice = 133;
+inline constexpr int codecToneTargetChoice = 134;
+static_assert(codecToneTargetChoice == static_cast<int>(targets.size()),
+              "Codec target IDs must match the target table");
 
 inline int targetChoiceForParameter(const juce::String& parameterId)
 {

@@ -114,7 +114,7 @@ juce::Path makeStarPath(juce::Rectangle<float> bounds)
     return path;
 }
 
-constexpr std::array<const char*, 19> distortionSummaries
+constexpr std::array<const char*, 21> distortionSummaries
 {
     "Dense tanh clipping with strong static level compensation",
     "Open arctangent saturation with brighter, gentler harmonics",
@@ -134,9 +134,11 @@ constexpr std::array<const char*, 19> distortionSummaries
     "Clean flat-threshold clipping without added noise or tone filtering",
     "High-gain asymmetric fuzz with compressed sustain and a restrained top end",
     "Mechanical and tube waveshaping with optional tone-shaping controls",
-    "Asymmetric diode-inspired clipping with envelope-sensitive response and filtering"
+    "Asymmetric diode-inspired clipping with envelope-sensitive response and filtering",
+    "Combined rate reduction, 1-16-bit quantisation, clipping, rectification and noise",
+    "Companding and predictive/spectral digital codec artifacts with frame damage"
 };
-constexpr std::array<const char*, 19> distortionDetails
+constexpr std::array<const char*, 21> distortionDetails
 {
     "DIST increases density and compression through a level-compensated soft curve.",
     "DIST moves smoothly from clean into open saturation without darkening the top end.",
@@ -156,9 +158,22 @@ constexpr std::array<const char*, 19> distortionDetails
     "DIST lowers the clipping threshold for progressively harder, squared-off transients.",
     "DIST increases asymmetric clipping, dense sustain and dark post-clip fuzz colour.",
     "MECH and TUBE provide the main character; BODY, BIAS, FOLD and TONE add variation.",
-    "DRIVE controls clipping; IN HP, ENV, DIODE, OUT HP and OUT LP shape its response."
+    "DRIVE increases diode-style clipping; ENV and HP/LP filters shape its response.",
+    "DRIVE sets the wet amount; RATE, BITS, CLIP, RECTIFY and NOISE combine digital damage.",
+    "DRIVE sets the wet blend; CODEC chooses PCM, mu-law, A-law, speech or spectral loss."
 };
 static_assert(distortionSummaries.size() == distortionDetails.size());
+// A sized std::array silently fills missing initializers with null pointers.
+// Catch incomplete text tables at compile time before a new model can crash
+// the host when its description is appended to a JUCE String.
+static_assert([]() constexpr
+{
+    for (const auto* summary : distortionSummaries)
+        if (summary == nullptr) return false;
+    for (const auto* detail : distortionDetails)
+        if (detail == nullptr) return false;
+    return true;
+}(), "Every distortion type must have a summary and detail");
 
 juce::Colour filterColourForId(int filterIndex, int typeId)
 {
@@ -2786,6 +2801,68 @@ void CrusherAudioProcessorEditor::ParameterDragLabel::mouseDrag(
                 this);
 }
 
+void CrusherAudioProcessorEditor::FilterShapeButton::paintButton(
+    juce::Graphics& g, bool highlighted, bool down)
+{
+    const bool selected = getToggleState();
+    const auto fill = selected ? knobIndicatorColour.withAlpha(0.24f)
+        : juce::Colour(0xff1c2229);
+    g.setColour(highlighted || down ? fill.brighter(0.12f) : fill);
+    g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.6f);
+    g.setColour(selected ? knobIndicatorColour : knobTrackColour);
+    g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f),
+                           2.6f, selected ? 1.2f : 0.7f);
+    juce::Path curve;
+    if (mode == 0) // Low-pass: horizontal left, steep fall on the right.
+    {
+        curve.startNewSubPath(2.8f, 4.6f);
+        curve.lineTo(7.0f, 4.6f);
+        curve.quadraticTo(9.6f, 4.6f, 11.3f, 11.8f);
+        curve.lineTo(14.2f, 12.0f);
+    }
+    else if (mode == 1) // Band-pass: resonant peak.
+    {
+        curve.startNewSubPath(2.5f, 12.0f);
+        curve.lineTo(4.7f, 11.9f);
+        curve.quadraticTo(7.8f, 1.4f, 9.1f, 4.9f);
+        curve.quadraticTo(11.5f, 12.1f, 14.3f, 12.1f);
+    }
+    else // High-pass: rise on the left, horizontal at the top right.
+    {
+        curve.startNewSubPath(2.8f, 12.0f);
+        curve.lineTo(5.2f, 11.8f);
+        curve.quadraticTo(7.0f, 4.7f, 10.0f, 4.7f);
+        curve.lineTo(14.2f, 4.7f);
+    }
+    g.setColour(selected ? knobIndicatorColour : knobLabelColour);
+    g.strokePath(curve, juce::PathStrokeType(1.35f,
+        juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+}
+
+class CrusherAudioProcessorEditor::EnvMeter final : public juce::Component,
+                                                      public juce::SettableTooltipClient
+{
+public:
+    explicit EnvMeter(CrusherAudioProcessor& p) : processor(p) {}
+    void paint(juce::Graphics& g) override
+    {
+        const auto area = getLocalBounds().toFloat();
+        g.setColour(juce::Colour(0xff11171d));
+        g.fillRoundedRectangle(area, 3.0f);
+        g.setColour(knobTrackColour);
+        g.drawRoundedRectangle(area.reduced(0.5f), 3.0f, 0.7f);
+        const float value = juce::jlimit(0.0f, 1.0f, processor.getEnvelopeMeter());
+        if (value > 0.00001f)
+        {
+            g.setColour(knobIndicatorColour);
+            g.fillRoundedRectangle(area.reduced(2.0f).withWidth(
+                juce::jmax(0.0f, (area.getWidth() - 4.0f) * value)), 2.0f);
+        }
+    }
+private:
+    CrusherAudioProcessor& processor;
+};
+
 // Global seven-band graph, independent of the chosen distortion model.
 // A normal drag changes frequency/gain with host gestures; the wheel changes
 // Q. Right-click chooses the filter shape or assigns that point's X/Y
@@ -2807,7 +2884,7 @@ public:
             b.shape = processor.parameters.getParameter(prefix + "Shape");
         }
         setName("EQ graph");
-        setTooltip("EQ GRAPH | Drag to adjust frequency and gain; right-click a point to select its shape or assign horizontal/vertical sequencer targets.");
+        setTooltip("EQ GRAPH | Drag a point for frequency and gain; right-click for shape, SEQ targets and ENV targets.");
         startTimerHz(24);
     }
 
@@ -3124,6 +3201,22 @@ private:
                      isTargetAssigned(horz));
         if (! available && ! isTargetAssigned(vert) && ! isTargetAssigned(horz))
             menu.addItem(103, "All 16 target slots occupied", false);
+        menu.addSeparator();
+        const auto gainId = "eq" + juce::String(selectedBand + 1) + "Gain";
+        const auto freqId = "eq" + juce::String(selectedBand + 1) + "Freq";
+        const bool assignedGain = processor.isEnvelopeTargetAssigned(gainId);
+        const bool assignedFreq = processor.isEnvelopeTargetAssigned(freqId);
+        const bool envAvailable = processor.getEnvelopeAssignmentCount()
+            < processor.getEnvelopeTargetLimit();
+        menu.addItem(201, "Set Env Target Gain", envAvailable || assignedGain,
+                     assignedGain);
+        menu.addItem(202, "Set Env Target Freq", envAvailable || assignedFreq,
+                     assignedFreq);
+        if (assignedGain || assignedFreq)
+        {
+            menu.addItem(203, "Remove Env Target Gain", assignedGain);
+            menu.addItem(204, "Remove Env Target Freq", assignedFreq);
+        }
 
         const int captured = selectedBand;
         juce::Component::SafePointer<EQGraph> safe(this);
@@ -3135,6 +3228,16 @@ private:
                 safe->selectedBand = captured;
                 if (result == 101 || result == 102)
                     safe->assignSequencerTarget(captured, result == 101);
+                else if (result >= 201 && result <= 204)
+                {
+                    const auto prefix = "eq" + juce::String(captured + 1);
+                    const auto targetId = prefix
+                        + ((result == 201 || result == 203) ? "Gain" : "Freq");
+                    if (result == 201 || result == 202)
+                        safe->processor.assignEnvelopeTarget(targetId);
+                    else
+                        safe->processor.clearEnvelopeTarget(targetId);
+                }
                 else if (result >= 1 && result <= 6)
                     setWithGesture(safe->handles[static_cast<size_t>(captured)].shape,
                                    static_cast<float>(result - 1));
@@ -3358,6 +3461,12 @@ void CrusherAudioProcessorEditor::LookAndFeel::drawToggleButton(
         button.getProperties().getWithDefault("sequencerLabelStyle", false));
     const bool standardTextButton = static_cast<bool>(
         button.getProperties().getWithDefault("standardTextButton", false));
+    const bool filterSelectorTextButton = static_cast<bool>(
+        button.getProperties().getWithDefault("filterSelectorTextButton", false));
+    const bool filterSelectorThemeRed = static_cast<bool>(
+        button.getProperties().getWithDefault("filterSelectorThemeRed", false));
+    const bool hasPowerLed = static_cast<bool>(
+        button.getProperties().getWithDefault("hasPowerLed", false));
     const bool active = button.getToggleState();
     const bool enabled = button.isEnabled();
     auto activeColour = ledOnly ? juce::Colour(0xffff9363) : controlAccentColour;
@@ -3390,6 +3499,31 @@ void CrusherAudioProcessorEditor::LookAndFeel::drawToggleButton(
         g.drawText(button.getButtonText(),
                    button.getLocalBounds().withTrimmedLeft(18),
                    juce::Justification::centredLeft, false);
+        return;
+    }
+
+    if (filterSelectorTextButton)
+    {
+        // EQ/ENV use the theme-bar red. Other selectors, including PHAT,
+        // retain their original yellow styling and 2.6px corners.
+        const auto selectorColour = filterSelectorThemeRed
+            ? themeDistortionRed : knobIndicatorColour;
+        const auto fill = active ? selectorColour.withAlpha(0.24f)
+                                 : juce::Colour(0xff1c2229);
+        g.setColour(shouldDrawButtonAsHighlighted || shouldDrawButtonAsDown
+                        ? fill.brighter(0.12f) : fill);
+        g.fillRoundedRectangle(bounds, 2.6f);
+        g.setColour(active ? selectorColour : knobTrackColour);
+        g.drawRoundedRectangle(bounds.reduced(0.5f), 2.6f,
+                               active ? 1.2f : 0.7f);
+        g.setColour(active ? selectorColour : knobLabelColour);
+        g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+        auto textBounds = button.getLocalBounds();
+        // Reserve the left 18px for the separate, clickable EQ/ENV LED.
+        if (hasPowerLed)
+            textBounds = textBounds.withTrimmedLeft(18);
+        g.drawFittedText(button.getButtonText(), textBounds.reduced(2, 2),
+                         juce::Justification::centred, 1);
         return;
     }
 
@@ -3721,7 +3855,7 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     content.addMouseListener(this, true);
     content.setInterceptsMouseClicks(false, true);
 
-    versionLabel.setText("v1.40.0", juce::dontSendNotification);
+    versionLabel.setText("v1.43.2", juce::dontSendNotification);
     versionLabel.setJustificationType(juce::Justification::centred);
     versionLabel.setColour(juce::Label::textColourId, knobIndicatorColour);
     versionLabel.setFont(juce::Font(juce::FontOptions(8.5f,
@@ -3761,6 +3895,16 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     diodeShapeDial = addDial("diodeShape", "DIODE", "Diode Clip: change the positive and negative clipping curves.");
     diodeOutputHPDial = addDial("diodeOutputHP", "OUT HP", "Diode Clip: high-pass the processed distortion to remove low frequencies.");
     diodeOutputLPDial = addDial("diodeOutputLP", "OUT LP", "Diode Clip: low-pass the processed distortion to soften top-end harmonics.");
+    codecModeDial = addDial("codecMode", "CODEC", "Codec: 0-19 PCM, 20-39 mu-law, 40-59 A-law, 60-79 predictive speech, 80-100 spectral loss.");
+    codecRateDial = addDial("codecRate", "RATE", "Codec: lower capture rate, from host rate to about 800 Hz.");
+    codecBitsDial = addDial("codecBits", "BITS", "Codec: quantizer resolution from 2 to 12 bits.");
+    codecDamageDial = addDial("codecDamage", "DAMAGE", "Codec: increase signal-dependent frame faults, grain and spectral noise fill.");
+    codecToneDial = addDial("codecTone", "TONE", "Codec: dark/bright post-filter; centre is neutral.");
+    loFiRateDial = addDial("loFiRate", "RATE", "Lo-Fi: capture-rate reduction, from host rate to 180 Hz. Right-click for PRE/POST anti-alias settings.");
+    loFiBitsDial = addDial("loFiBits", "BITS", "Lo-Fi: continuous 1-bit through 16-bit quantisation.");
+    loFiClipDial = addDial("loFiClip", "CLIP", "Lo-Fi: increase hard-clipping intensity before downsampling.");
+    loFiRectifyDial = addDial("loFiRectify", "RECTIFY", "Lo-Fi: morph toward full-wave rectification before downsampling.");
+    loFiNoiseDial = addDial("loFiNoise", "NOISE", "Lo-Fi: add controlled noise before quantisation.");
     pixelatedRateDial = addDial("pixelatedRate", "RATE", "Pixelated: sample-and-hold rate; 50% follows the original DRIVE response.");
     pixelatedBitsDial = addDial("pixelatedBits", "BITS", "Pixelated: quantisation bit depth, low for grit and high for cleaner resolution; centre is original.");
     pixelatedDitherDial = addDial("pixelatedDither", "DITHER", "Pixelated: noise added before quantisation; 50% matches the original.");
@@ -3827,10 +3971,10 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     asymToneDial = addDial("asymTone", "TONE", "Asym: darken or add presence after waveshaping; centre is neutral.");
     filterCutoffDial = addDial(
         "filterCutoff", "CUT",
-        "Hump low-pass frequency: 80 Hz to 16 kHz using its original taper.");
+        "Set shared LP / BP / HP frequency, 80 Hz to 16 kHz.");
     filterResonanceDial = addDial(
         "filterResonance", "RES",
-        "Hump low-pass resonance: Q rises from 1 to 7.");
+        "Set shared LP / BP / HP resonance, Q from 1 to 7.");
     compAmountDial = addDial(
         "compAmount", "COMP",
         "Hump compressor input gain and soft limiting, up to 40 dB drive.");
@@ -3966,6 +4110,38 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     distStereoButton.setVisible(false);
     distMonoButton.setVisible(false);
 
+    // View selection and DSP enable remain independent. Each EQ/ENV
+    // selector contains a separately clickable power LED on its left.
+    for (auto* button : { &eqViewButton, &envViewButton })
+    {
+        button->setClickingTogglesState(false);
+        button->getProperties().set("filterSelectorTextButton", true);
+        button->getProperties().set("filterSelectorThemeRed", true);
+        button->getProperties().set("hasPowerLed", true);
+        content.addAndMakeVisible(*button);
+    }
+    eqViewButton.setTooltip("EQ VIEW | Click EQ to show its seven-band controls; click the inset LED to enable or bypass EQ.");
+    envViewButton.setTooltip("ENV VIEW | Click ENV to show the envelope follower; click the inset LED to enable or bypass ENV.");
+    eqViewButton.onClick = [this] { envViewActive = false; updateEQEnvView(); };
+    envViewButton.onClick = [this] { envViewActive = true; updateEQEnvView(); };
+    envSensitivityDial = addDial("envSensitivity", "SENS",
+        "Input sensitivity (-24 to +24 dB) for envelope detection.");
+    envAttackDial = addDial("envAttack", "ATTACK",
+        "Envelope rise response, 1 to 200 ms.");
+    envReleaseDial = addDial("envRelease", "RELEASE",
+        "Envelope fall response, 20 to 1500 ms.");
+    envDepthDial = addDial("envDepth", "DEPTH",
+        "Positive or inverted envelope modulation, -100% to +100%.");
+    envMeter = std::make_unique<EnvMeter>(processor);
+    envMeter->setTooltip("ENV METER | Tracked level of the incoming pre-distortion audio.");
+    content.addAndMakeVisible(*envMeter);
+    envAssignmentLabel.setJustificationType(juce::Justification::centredRight);
+    envAssignmentLabel.setFont(juce::Font(juce::FontOptions(9.0f)));
+    envAssignmentLabel.setColour(juce::Label::textColourId, knobLabelColour);
+    envAssignmentLabel.setTooltip(
+        "ENV ASSIGNMENTS | Right-click any knob or EQ point to assign modulation; up to 8 targets.");
+    content.addAndMakeVisible(envAssignmentLabel);
+
     // Global EQ. A shared on/off LED and PRE/EMPH/POST selector apply to
     // every distortion type. The graph owns per-point host gestures.
     eqOnAttachment = std::make_unique<
@@ -3986,14 +4162,12 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     eqModeAttachment = std::make_unique<
         juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
             processor.parameters, "eqMode", eqModeBox);
-    // Use the same ToggleButton artwork, colours and 9pt bold font as PHAT.
-    // FLAT remains a momentary reset, not a persistent on/off setting.
-    eqResetButton.setName("Flat");
-    eqResetButton.getProperties().set("standardTextButton", true);
-    eqResetButton.getProperties().set("activeColour", knobIndicatorColour.toString());
+    // RESET is momentary; its idle artwork matches the filter selectors.
+    eqResetButton.setName("Reset");
+    eqResetButton.getProperties().set("filterSelectorTextButton", true);
     eqResetButton.setColour(juce::ToggleButton::textColourId, knobValueColour);
     eqResetButton.setClickingTogglesState(false);
-    eqResetButton.setTooltip("EQ FLAT | Reset all seven bands: frequency, gain, Q and shape.");
+    eqResetButton.setTooltip("EQ RESET | Reset all seven bands: frequency, gain, Q and shape.");
     eqResetButton.onClick = [this] { resetGraphicEQ(); };
     content.addAndMakeVisible(eqResetButton);
     eqGraph = std::make_unique<EQGraph>(processor);
@@ -4005,6 +4179,7 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     distortionTypeBox.addItem("Amp", 7);
     distortionTypeBox.addItem("Asym", 9);
     distortionTypeBox.addItem("Bumpy", 8);
+    distortionTypeBox.addItem("Codec", 21);
     distortionTypeBox.addItem("Comb", 12);
     distortionTypeBox.addItem("Crackle", 5);
     distortionTypeBox.addItem("Diode Clip", 19);
@@ -4013,6 +4188,7 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     distortionTypeBox.addItem("Hard Clip", 16);
     distortionTypeBox.addItem("Hump", 18);
     distortionTypeBox.addItem("Lightning", 6);
+    distortionTypeBox.addItem("Lo-Fi", 20);
     distortionTypeBox.addItem("Pixelated", 11);
     distortionTypeBox.addItem("Razor", 10);
     distortionTypeBox.addItem("Rectify", 4);
@@ -4029,9 +4205,9 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
             *parameter,
             [this](float value)
             {
-                // Parameter values 0..18 map to dropdown item IDs 1..19.
+                // Parameter values 0..20 map to dropdown item IDs 1..21.
                 distortionTypeBox.setSelectedId(
-                    juce::jlimit(1, 19, juce::roundToInt(value) + 1),
+                    juce::jlimit(1, 21, juce::roundToInt(value) + 1),
                     juce::dontSendNotification);
                 updateDistortionControls();
             }, nullptr);
@@ -4085,18 +4261,53 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     setupPowerLed(distortionOnButton, "Distortion On",
         "DISTORTION | Enable or bypass the selected distortion model.");
     setupPowerLed(filterOnButton, "Filter On",
-        "FILTER | Engage the original resonant low-pass and fat limiter.");
+        "FILTER | Enable the shared LP / BP / HP resonant filter.");
+    // An invisible choice bridge ensures host automation and preset recall
+    // update the three compact selectable response icons immediately.
+    filterShapeBox.addItem("LP", 1);
+    filterShapeBox.addItem("BP", 2);
+    filterShapeBox.addItem("HP", 3);
+    filterShapeBox.onChange = [this] { updateFilterShapeIcons(); };
+    filterShapeAttachment = std::make_unique<
+        juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
+            processor.parameters, "filterShape", filterShapeBox);
+    const std::array<FilterShapeButton*, 3> filterButtons
+        { &filterLowButton, &filterBandButton, &filterHighButton };
+    const std::array<juce::String, 3> filterNames
+        { "LP | Original resonant low-pass", "BP | Resonant band-pass",
+          "HP | Resonant high-pass" };
+    for (int i = 0; i < 3; ++i)
+    {
+        auto* button = filterButtons[static_cast<size_t>(i)];
+        button->setClickingTogglesState(false);
+        button->setTooltip(filterNames[static_cast<size_t>(i)]);
+        button->onClick = [this, i]
+        {
+            filterShapeBox.setSelectedId(i + 1, juce::sendNotificationSync);
+            updateFilterShapeIcons();
+        };
+        content.addAndMakeVisible(*button);
+    }
+    updateFilterShapeIcons();
     setupPowerLed(compressorOnButton, "Compressor On",
         "COMP | Engage the stereo-linked compressor.");
     setupEffectButton(phatButton, "Phat",
         "PHAT | Use direct peaks instead of the smooth envelope detector.",
         knobIndicatorColour);
+    // PHAT uses the same selected yellow outline/fill as LP/BP/HP and EQ/ENV.
+    phatButton.getProperties().set("standardTextButton", false);
+    phatButton.getProperties().set("filterSelectorTextButton", true);
     distortionOnAttachment = std::make_unique<
         juce::AudioProcessorValueTreeState::ButtonAttachment>(
             processor.parameters, "distortionEnabled", distortionOnButton);
     filterOnAttachment = std::make_unique<
         juce::AudioProcessorValueTreeState::ButtonAttachment>(
             processor.parameters, "filterEnabled", filterOnButton);
+    setupPowerLed(envOnButton, "Global Envelope On",
+        "ENV | Enable audio-driven modulation for all distortion types.");
+    envOnAttachment = std::make_unique<
+        juce::AudioProcessorValueTreeState::ButtonAttachment>(
+            processor.parameters, "envEnabled", envOnButton);
     compressorOnAttachment = std::make_unique<
         juce::AudioProcessorValueTreeState::ButtonAttachment>(
             processor.parameters, "compEnabled", compressorOnButton);
@@ -4510,6 +4721,12 @@ CrusherAudioProcessorEditor::Dial* CrusherAudioProcessorEditor::addDial(
     {
         return pointer->parameterId;
     };
+    const auto contextAction = [this, pointer](juce::Point<int> screen)
+    {
+        showParameterEnvMenu(pointer->parameterId, screen);
+    };
+    dial->label.onContextMenu = contextAction;
+    dial->slider.onContextMenu = contextAction;
     const juce::String sharedTooltip = juce::String(caption)
         + " | " + juce::String(description);
     dial->label.setTooltip(sharedTooltip);
@@ -4580,7 +4797,8 @@ void CrusherAudioProcessorEditor::updateSectionDimming()
     const int mask = (eqOnButton.getToggleState() ? 1 : 0)
                    | (distortionOnButton.getToggleState() ? 2 : 0)
                    | (filterOnButton.getToggleState() ? 4 : 0)
-                   | (compressorOnButton.getToggleState() ? 8 : 0);
+                   | (compressorOnButton.getToggleState() ? 8 : 0)
+                   | (envOnButton.getToggleState() ? 16 : 0);
     if (mask == lastSectionDimmingMask)
         return;
     lastSectionDimmingMask = mask;
@@ -4615,7 +4833,7 @@ void CrusherAudioProcessorEditor::updateSectionDimming()
                         bumpyBiasDial, bumpyToneDial, combTimeDial, combFeedbackDial, combDampDial,
                         combSpreadDial, combToneDial, crackleDensityDial, crackleBurstDial, crackleDecayDial,
                         crackleGritDial, crackleToneDial, diodeInputHPDial, diodeEnvelopeDial,
-                        diodeShapeDial, diodeOutputHPDial, diodeOutputLPDial, lightningSparkDial, lightningReactDial, lightningClipDial,
+                        diodeShapeDial, diodeOutputHPDial, diodeOutputLPDial, codecModeDial, codecRateDial, codecBitsDial, codecDamageDial, codecToneDial, loFiRateDial, loFiBitsDial, loFiClipDial, loFiRectifyDial, loFiNoiseDial, lightningSparkDial, lightningReactDial, lightningClipDial,
                         lightningEdgeDial, lightningToneDial, pixelatedRateDial, pixelatedBitsDial, pixelatedDitherDial,
                         pixelatedJitterDial, pixelatedToneDial, rectifyWaveDial, rectifyBiasDial, rectifyCurveDial,
                         rectifyFoldDial, rectifyToneDial, softClipThresholdDial, softClipKneeDial, softClipBiasDial,
@@ -4633,11 +4851,136 @@ void CrusherAudioProcessorEditor::updateSectionDimming()
     const bool filterOn = (mask & 4) != 0;
     dimDial(filterCutoffDial, filterOn);
     dimDial(filterResonanceDial, filterOn);
+    for (auto* icon : { &filterLowButton, &filterBandButton, &filterHighButton })
+        dim(*icon, filterOn);
+    const bool envOn = envOnButton.getToggleState();
+    for (auto* dial : { envSensitivityDial, envAttackDial,
+                        envReleaseDial, envDepthDial })
+        dimDial(dial, envOn);
+    dim(envAssignmentLabel, envOn);
+    if (envMeter != nullptr) dim(*envMeter, envOn);
     const bool compOn = (mask & 8) != 0;
     dimDial(compAmountDial, compOn);
     dim(phatButton, compOn);
     // Section titles are painted in the editor itself; repaint them too.
     repaint();
+}
+
+void CrusherAudioProcessorEditor::updateFilterShapeIcons()
+{
+    const int selected = filterShapeBox.getSelectedId();
+    std::array<FilterShapeButton*, 3> buttons
+        { &filterLowButton, &filterBandButton, &filterHighButton };
+    for (int i = 0; i < 3; ++i)
+    {
+        buttons[static_cast<size_t>(i)]->setToggleState(
+            selected == i + 1, juce::dontSendNotification);
+        buttons[static_cast<size_t>(i)]->repaint();
+    }
+}
+
+void CrusherAudioProcessorEditor::updateEQEnvView()
+{
+    const bool eqVisible = ! presetBrowserOpen && ! envViewActive;
+    const bool envVisible = ! presetBrowserOpen && envViewActive;
+    eqViewButton.setVisible(! presetBrowserOpen);
+    envViewButton.setVisible(! presetBrowserOpen);
+    eqViewButton.setToggleState(! envViewActive, juce::dontSendNotification);
+    envViewButton.setToggleState(envViewActive, juce::dontSendNotification);
+    // Each independent APVTS-attached power LED sits over its own view
+    // button; click on the LED toggles DSP, elsewhere selects the view.
+    eqOnButton.setVisible(! presetBrowserOpen);
+    eqModeBox.setVisible(eqVisible);
+    eqResetButton.setVisible(eqVisible);
+    if (eqGraph != nullptr) eqGraph->setVisible(eqVisible);
+    envOnButton.setVisible(! presetBrowserOpen);
+    // Keep both inset LEDs above the selector hit areas and artwork.
+    if (! presetBrowserOpen)
+    {
+        eqOnButton.toFront(false);
+        envOnButton.toFront(false);
+    }
+    if (envMeter != nullptr) envMeter->setVisible(envVisible);
+    envAssignmentLabel.setVisible(envVisible);
+    for (auto* dial : { envSensitivityDial, envAttackDial,
+                        envReleaseDial, envDepthDial })
+    {
+        if (dial == nullptr) continue;
+        dial->label.setVisible(envVisible);
+        dial->slider.setVisible(envVisible);
+    }
+    repaint();
+}
+
+void CrusherAudioProcessorEditor::showParameterEnvMenu(
+    const juce::String& parameterId, juce::Point<int> screenPosition)
+{
+    if (crusher::sequencer::targetChoiceForParameter(parameterId) <= 0)
+        return;
+    const bool assigned = processor.isEnvelopeTargetAssigned(parameterId);
+    const bool available = processor.getEnvelopeAssignmentCount()
+        < processor.getEnvelopeTargetLimit();
+    juce::PopupMenu menu;
+    menu.addItem(1, "Set Env Target", available || assigned, assigned);
+    menu.addItem(2, "Remove Env Target", assigned);
+    menu.addSeparator();
+    menu.addItem(3, "Clear All Env Targets",
+                 processor.getEnvelopeAssignmentCount() > 0);
+    const bool loFiRateMenu = parameterId == "loFiRate"
+        && distortionTypeBox.getSelectedId() == 20;
+    if (loFiRateMenu)
+    {
+        // Keep the six-knob grid unchanged: the AA stages are available in
+        // RATE's existing right-click menu and through host automation.
+        juce::PopupMenu pre, post;
+        const auto* preParam = processor.parameters.getRawParameterValue("loFiPreAA");
+        const auto* postParam = processor.parameters.getRawParameterValue("loFiPostAA");
+        const auto addLevels = [](juce::PopupMenu& submenu, int base,
+                                  float current)
+        {
+            for (const int level : { 0, 25, 50, 75, 100 })
+                submenu.addItem(base + level,
+                    level == 0 ? "OFF" : juce::String(level) + "%",
+                    true, juce::roundToInt(current / 25.0f) * 25 == level);
+        };
+        addLevels(pre, 1000, preParam != nullptr ? preParam->load() : 0.0f);
+        addLevels(post, 2000, postParam != nullptr ? postParam->load() : 0.0f);
+        menu.addSeparator();
+        menu.addSubMenu("PRE Anti-Alias", pre);
+        menu.addSubMenu("POST Anti-Alias", post);
+        menu.addSeparator();
+        const bool preAssigned = processor.isEnvelopeTargetAssigned("loFiPreAA");
+        const bool postAssigned = processor.isEnvelopeTargetAssigned("loFiPostAA");
+        const bool freeSlot = processor.getEnvelopeAssignmentCount()
+            < processor.getEnvelopeTargetLimit();
+        menu.addItem(4, "Set Env Target PRE AA", freeSlot || preAssigned, preAssigned);
+        menu.addItem(5, "Set Env Target POST AA", freeSlot || postAssigned, postAssigned);
+        menu.addItem(6, "Remove Env Target PRE AA", preAssigned);
+        menu.addItem(7, "Remove Env Target POST AA", postAssigned);
+    }
+    juce::Component::SafePointer<CrusherAudioProcessorEditor> safe(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
+        juce::Rectangle<int>(screenPosition.x, screenPosition.y, 1, 1)),
+        [safe, parameterId](int result)
+        {
+            if (safe == nullptr || result <= 0) return;
+            if (result >= 1000 && result <= 1100)
+                setParameterActualValue(
+                    safe->processor.parameters.getParameter("loFiPreAA"),
+                    static_cast<float>(result - 1000));
+            else if (result >= 2000 && result <= 2100)
+                setParameterActualValue(
+                    safe->processor.parameters.getParameter("loFiPostAA"),
+                    static_cast<float>(result - 2000));
+            else if (result == 1) safe->processor.assignEnvelopeTarget(parameterId);
+            else if (result == 2) safe->processor.clearEnvelopeTarget(parameterId);
+            else if (result == 3) safe->processor.clearAllEnvelopeTargets();
+            else if (result == 4) safe->processor.assignEnvelopeTarget("loFiPreAA");
+            else if (result == 5) safe->processor.assignEnvelopeTarget("loFiPostAA");
+            else if (result == 6) safe->processor.clearEnvelopeTarget("loFiPreAA");
+            else if (result == 7) safe->processor.clearEnvelopeTarget("loFiPostAA");
+            safe->updateSequencerTargetHighlights();
+        });
 }
 
 void CrusherAudioProcessorEditor::resetGraphicEQ()
@@ -4652,7 +4995,7 @@ void CrusherAudioProcessorEditor::resetGraphicEQ()
         EQGraph::setWithGesture(processor.parameters.getParameter(prefix + "Shape"), 0.0f);
     }
     information.setText(
-        "EQ FLAT | All seven bands returned to neutral settings.",
+        "EQ RESET | All seven bands returned to neutral settings.",
         juce::dontSendNotification);
     if (eqGraph != nullptr) eqGraph->repaint();
 }
@@ -4670,6 +5013,8 @@ void CrusherAudioProcessorEditor::updateDistortionControls()
     const bool combSelected = selected == 11;
     const bool crackleSelected = selected == 4;
     const bool diodeSelected = selected == 18;
+    const bool codecSelected = selected == 20;
+    const bool loFiSelected = selected == 19;
     const bool lightningSelected = selected == 5;
     const bool pixelatedSelected = selected == 10;
     const bool rectifySelected = selected == 3;
@@ -4687,12 +5032,16 @@ void CrusherAudioProcessorEditor::updateDistortionControls()
     {
         driveDial->label.setVisible(visible && ! humpSelected);
         driveDial->slider.setVisible(visible && ! humpSelected);
-        const bool driveCaption = diodeSelected || ampSelected || asymSelected || bumpySelected
+        const bool driveCaption = codecSelected || loFiSelected || diodeSelected || ampSelected || asymSelected || bumpySelected
                                   || combSelected || crackleSelected || freshSelected
                                   || fuzzSelected || hardClipSelected || lightningSelected || pixelatedSelected || razorSelected || rectifySelected || samuraiSelected || saturationSelected || softClipSelected || stressedSelected || tubeSelected;
         driveDial->label.setText(driveCaption ? "DRIVE" : "DIST",
                                   juce::dontSendNotification);
-        driveDial->help = diodeSelected
+        driveDial->help = codecSelected
+            ? "Codec drive: blend the digital codec degradation from dry to processed."
+            : loFiSelected
+            ? "Lo-Fi drive: blend the complete digital damage chain from dry to full effect."
+            : diodeSelected
             ? "Diode Clip drive: range from subtle clipping to aggressive harmonics."
             : ampSelected
             ? "Amp input drive: 0-100%, controllable from the sequencer."
@@ -4729,7 +5078,7 @@ void CrusherAudioProcessorEditor::updateDistortionControls()
                                     : samuraiSelected
                                         ? "Samurai drive: raises blade saturation, gating and metallic harmonics."
                                         : "Model-specific DIST amount for the selected distortion type.";
-        const auto sharedHelp = juce::String((diodeSelected || ampSelected || asymSelected || bumpySelected || combSelected || crackleSelected || freshSelected || fuzzSelected || hardClipSelected || lightningSelected || pixelatedSelected || razorSelected || rectifySelected || samuraiSelected || saturationSelected || softClipSelected || stressedSelected || tubeSelected) ? "DRIVE" : "DIST")
+        const auto sharedHelp = juce::String((codecSelected || loFiSelected || diodeSelected || ampSelected || asymSelected || bumpySelected || combSelected || crackleSelected || freshSelected || fuzzSelected || hardClipSelected || lightningSelected || pixelatedSelected || razorSelected || rectifySelected || samuraiSelected || saturationSelected || softClipSelected || stressedSelected || tubeSelected) ? "DRIVE" : "DIST")
                               + " | " + driveDial->help;
         driveDial->label.setTooltip(sharedHelp);
         driveDial->slider.setTooltip(sharedHelp);
@@ -4767,6 +5116,20 @@ void CrusherAudioProcessorEditor::updateDistortionControls()
         {
             dial->label.setVisible(visible && crackleSelected);
             dial->slider.setVisible(visible && crackleSelected);
+        }
+    for (auto* dial : { codecModeDial, codecRateDial, codecBitsDial,
+                        codecDamageDial, codecToneDial })
+        if (dial != nullptr)
+        {
+            dial->label.setVisible(visible && codecSelected);
+            dial->slider.setVisible(visible && codecSelected);
+        }
+    for (auto* dial : { loFiRateDial, loFiBitsDial, loFiClipDial,
+                        loFiRectifyDial, loFiNoiseDial })
+        if (dial != nullptr)
+        {
+            dial->label.setVisible(visible && loFiSelected);
+            dial->slider.setVisible(visible && loFiSelected);
         }
     for (auto* dial : { pixelatedRateDial, pixelatedBitsDial, pixelatedDitherDial,
                         pixelatedJitterDial, pixelatedToneDial })
@@ -4918,6 +5281,9 @@ void CrusherAudioProcessorEditor::updatePresetBrowserVisibility()
     eqModeBox.setVisible(! presetBrowserOpen);
     eqResetButton.setVisible(! presetBrowserOpen);
     if (eqGraph != nullptr) eqGraph->setVisible(! presetBrowserOpen);
+    for (auto* icon : { &filterLowButton, &filterBandButton, &filterHighButton })
+        icon->setVisible(! presetBrowserOpen);
+    updateEQEnvView();
     information.setVisible(! presetBrowserOpen);
     randomButton.setVisible(! presetBrowserOpen);
     mixLockButton.setVisible(! presetBrowserOpen);
@@ -4970,8 +5336,10 @@ void CrusherAudioProcessorEditor::updateSequencerTargetHighlights()
     {
         const auto parameterId = dial->label.parameterIdProvider != nullptr
             ? dial->label.parameterIdProvider() : juce::String();
-        dial->label.setTargetAppearance(
-            sequencerPanel->isTargetAssigned(parameterId), accent);
+        const bool seqAssigned = sequencerPanel->isTargetAssigned(parameterId);
+        const bool envAssigned = processor.isEnvelopeTargetAssigned(parameterId);
+        dial->label.setTargetAppearance(seqAssigned || envAssigned,
+            seqAssigned ? accent : juce::Colour(0xffd19aa7));
     }
     sequencerPanel->updateTargetHighlights();
 }
@@ -5909,11 +6277,8 @@ void CrusherAudioProcessorEditor::paint(juce::Graphics& g)
         drawControlPanel(770.0f, 62.0f, 66.0f, 170.0f); // Original comp
         drawControlPanel(842.0f, 62.0f, 66.0f, 170.0f); // Original mix/out
         g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-        // EQ LED and title stay together in the enlarged, central EQ panel.
-        g.setColour(knobLabelColour.withMultipliedAlpha(
-            (lastSectionDimmingMask & 1) != 0 ? 1.0f : 0.32f));
-        g.drawText("EQ", 389, 69, 20, 18,
-                   juce::Justification::centredLeft);
+        // EQ and ENV labels/power LEDs are integrated in their view
+        // buttons, so there are no extra painted labels in this header.
         // No DISTORTION heading: its power LED sits at the top-left
         // of the contextual distortion panel, matching the panel inset.
         // Neither Filter nor Comp needs a painted title: their labels
@@ -5974,6 +6339,8 @@ void CrusherAudioProcessorEditor::resized()
     const bool combSelected = distortionTypeBox.getSelectedId() == 12;
     const bool crackleSelected = distortionTypeBox.getSelectedId() == 5;
     const bool diodeSelected = distortionTypeBox.getSelectedId() == 19;
+    const bool codecSelected = distortionTypeBox.getSelectedId() == 21;
+    const bool loFiSelected = distortionTypeBox.getSelectedId() == 20;
     const bool lightningSelected = distortionTypeBox.getSelectedId() == 6;
     const bool pixelatedSelected = distortionTypeBox.getSelectedId() == 11;
     const bool rectifySelected = distortionTypeBox.getSelectedId() == 4;
@@ -5990,7 +6357,7 @@ void CrusherAudioProcessorEditor::resized()
     // Shared DRIVE must remain at the top-left for every model that uses it.
     placeDial(driveDial,
         (ampSelected || asymSelected || bumpySelected || combSelected
-         || crackleSelected || diodeSelected || freshSelected || fuzzSelected || hardClipSelected
+         || crackleSelected || diodeSelected || codecSelected || loFiSelected || freshSelected || fuzzSelected || hardClipSelected
          || lightningSelected || pixelatedSelected || razorSelected
          || rectifySelected || samuraiSelected || saturationSelected
          || softClipSelected || stressedSelected || tubeSelected) ? 39 : 202,
@@ -6040,6 +6407,20 @@ void CrusherAudioProcessorEditor::resized()
     placeDial(crackleToneDial, 39, 154);
     placeDial(crackleDecayDial, 120, 154);
     placeDial(crackleGritDial, 201, 154);
+
+    // Codec: DRIVE / CODEC / RATE above TONE / BITS / DAMAGE.
+    placeDial(codecModeDial, 120, 67);
+    placeDial(codecRateDial, 201, 67);
+    placeDial(codecToneDial, 39, 154);
+    placeDial(codecBitsDial, 120, 154);
+    placeDial(codecDamageDial, 201, 154);
+
+    // Lo-Fi: DRIVE / RATE / BITS above CLIP / RECTIFY / NOISE.
+    placeDial(loFiRateDial, 120, 67);
+    placeDial(loFiBitsDial, 201, 67);
+    placeDial(loFiClipDial, 39, 154);
+    placeDial(loFiRectifyDial, 120, 154, 85);
+    placeDial(loFiNoiseDial, 201, 154);
 
     placeDial(pixelatedRateDial, 120, 67);
     placeDial(pixelatedBitsDial, 201, 67);
@@ -6122,11 +6503,16 @@ void CrusherAudioProcessorEditor::resized()
     distStereoButton.setBounds(290, 161, 62, 20);
     distMonoButton.setBounds(290, 183, 62, 20);
     placeDial(distOutputDial, 291, 67);
-    // EQ header: power LED, title, mode dropdown and FLAT button.
-    // Seven-band EQ graph fills the enlarged middle panel.
-    eqOnButton.setBounds(371, 70, 14, 14);
-    eqModeBox.setBounds(516, 69, 90, 20);
-    eqResetButton.setBounds(622, 67, 51, 23);
+    // Shared EQ/ENV header: clickable power LEDs are inset within the
+    // respective 50x23 view buttons (2px left, 4px top). Each LED's
+    // separate hit target toggles DSP; the surrounding button selects view.
+    eqViewButton.setBounds(390, 67, 50, 23);
+    envViewButton.setBounds(446, 67, 50, 23);
+    eqOnButton.setBounds(392, 71, 14, 14);
+    envOnButton.setBounds(448, 71, 14, 14);
+    eqModeBox.setBounds(512, 69, 90, 20);
+    eqResetButton.setBounds(620, 67, 50, 23);
+    // Restore EQ graph height now that no secondary power LED sits below.
     if (eqGraph != nullptr) eqGraph->setBounds(370, 97, 312, 126);
     // Match Filter and Comp: 14x14 amber LED, 3 px inset from the
     // panel's right edge and 4 px below its top edge.
@@ -6139,6 +6525,16 @@ void CrusherAudioProcessorEditor::resized()
     filterOnButton.setBounds(747, 66, 14, 14);
     placeDial(filterCutoffDial, 701, 67);
     placeDial(filterResonanceDial, 701, 154);
+    filterLowButton.setBounds(703, 138, 17, 15);
+    filterBandButton.setBounds(722, 138, 17, 15);
+    filterHighButton.setBounds(741, 138, 17, 15);
+    // The ENV view shares the central EQ panel, not the main window space.
+    placeDial(envSensitivityDial, 375, 110);
+    placeDial(envAttackDial, 451, 110);
+    placeDial(envReleaseDial, 527, 110);
+    placeDial(envDepthDial, 603, 110);
+    if (envMeter != nullptr) envMeter->setBounds(371, 200, 210, 13);
+    envAssignmentLabel.setBounds(586, 196, 91, 21);
     // COMP mirrors FILTER: matched LED and top-row knob. PHAT's centre
     // (y=186.5) shares the exact horizontal axis of the OUT knob circle.
     compressorOnButton.setBounds(819, 66, 14, 14);
@@ -6219,6 +6615,25 @@ void CrusherAudioProcessorEditor::timerCallback()
     if (sequencerOpen && sequencerPanel != nullptr)
         sequencerPanel->timerTick();
     updateAnimatedParameterDisplays();
+    if (envViewActive && envMeter != nullptr && envMeter->isShowing())
+        envMeter->repaint();
+    envAssignmentLabel.setText(
+        juce::String(processor.getEnvelopeAssignmentCount()) + "/"
+            + juce::String(processor.getEnvelopeTargetLimit()) + " TARGETS",
+        juce::dontSendNotification);
+    // Follow host automation/loaded state of EQ/ENV power without changing views.
+    if (envViewActive)
+    {
+        const bool enabled = envOnButton.getToggleState();
+        for (auto* dial : { envSensitivityDial, envAttackDial,
+                            envReleaseDial, envDepthDial })
+        {
+            dial->label.setAlpha(enabled ? 1.0f : 0.32f);
+            dial->slider.setAlpha(enabled ? 1.0f : 0.32f);
+        }
+        if (envMeter != nullptr) envMeter->setAlpha(enabled ? 1.0f : 0.32f);
+        envAssignmentLabel.setAlpha(enabled ? 1.0f : 0.32f);
+    }
 
     const auto processorPresetFile = processor.getCurrentPresetFile();
     if (processorPresetFile != currentPresetFile)

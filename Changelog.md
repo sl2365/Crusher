@@ -1,5 +1,65 @@
 # Crusher Changelog
 
+## v1.43.2 — Measured parameter readouts (2026-11-23)
+
+- Display-only unit readouts replace percentages for 15 parameters: shared filter cutoff (Hz/kHz) and resonance (Q); Codec algorithm name, capture rate (Hz/kHz) and whole-bit resolution; Lo-Fi capture rate and fractional bit resolution; Diode Clip IN HP, ENV, OUT HP and OUT LP (Hz/ms); Fresh FREQ, Razor FREQ and Fuzz TONE (Hz/kHz); Crackle DENSITY (relative multiplier). Numeric text entry translates back to the original percentage-based host parameters.
+- Codec and Lo-Fi rate readouts follow the host sample rate. All 0–100 parameter ranges, IDs, defaults, stored states, automation, sequencer/ENV target choices, audio DSP, GUI geometry and the original 21 distortion types are unchanged; parameters with DRIVE-dependent or purely subjective meanings remain percentages.
+- Source ZIP excludes Resources. Standalone conversion/round-trip, source-integrity and package checks are performed locally; a full Windows JUCE VST3 build and PHI readout test remain required.
+
+## v1.43.1 — Codec idle-noise suppression (2026-11-23)
+
+- Codec's DAMAGE grain and spectral-mask noise fill now respond to a per-channel input activity detector, preserving their full strength on normal signals while fading generated noise to silence after input ends. Peak-envelope release is 8 ms and sample-rate independent; the full fade to silence is approximately 80 ms after a strong signal, depending on level.
+- No new parameters, no audio-thread allocations or transcendentals. Codec frame faults, mask behaviour, quantisation and other control mappings remain intact. All other 20 model DSPs, HumpDSP, original 21 type IDs, 134 sequencer/ENV assignments, EQ, filter, comp, mix/output and Resources are unchanged. Full Windows VST3 build and host listening remain unverified.
+
+## v1.43.0 — Original Codec distortion (2026-11-23)
+
+- Added **Codec** as distortion type 21 (DSP index 20, sorted dropdown ID 21), preserving the existing 20 distortion type parameter indices and the original DSP files. The standalone `source/CrusherCodec.h` implements PCM quantisation, mu-law, A-law, differential predictive quantisation and four-band spectral-loss/quantisation, with controllable capture rate, resolution, frame noise/faults and tonal shaping. These are original codec-inspired sound-design approximations, not actual MP3, AAC, GSM or ToneBoosters implementations.
+- CODEC, RATE, BITS, DAMAGE and TONE appear in the existing 3 × 2 grid with shared DRIVE. All five are saved and host-automatable and are appended as sequencer/ENV target choices **130–134**; 1–129 remain untouched. Idle Codec smoothers do not run, and its DSP is used only while selected or fading out. Lookup tables are prepared outside the audio thread, and no runtime allocations or added latency are required.
+- Updated CMake, build script, on-screen version and README to 1.43.0. ZIP excludes Resources. Standalone DSP/control/finite-state tests, static ID/wiring checks and unchanged-source comparisons are required before release; Windows VST3 build and real-host listening/CPU tests still require user verification.
+
+## v1.42.1 — Lo-Fi selection crash fix (2026-11-23)
+
+- Fixed a missing Diode Clip entry in the 20-element distortion-details table. Previously only 19 text entries were initialized, so Lo-Fi's message occupied Diode Clip's slot and the 20th pointer was null. Selecting Lo-Fi attempted to append this null string to the GUI status line, potentially crashing the host (including PHI).
+- Added compile-time checks that every summary and detail entry is non-null. Distortion indices, parameter IDs, Lo-Fi DSP, all other model DSP, saved state, EQ, filter, compressor, sequencer, and GUI layouts are unchanged. No resource files are included.
+- Updated version strings and build metadata to 1.42.1. Static mapping and standalone C++17 description-table checks passed; Windows VST3 build and PHI retest remain required.
+
+## v1.42.0 — Original Lo-Fi combined distortion (2026-11-23)
+
+- Added **Lo-Fi** as the 20th distortion type (dropdown ID 20, DSP index 19) without renumbering the existing 19 models. Its independent `source/CrusherLoFi.h` uses a composite CLIP → RECTIFY → NOISE → optional PRE anti-alias → SAMPLE RATE HOLD + 1–16 BIT quantisation → optional POST low-pass reconstruction chain. Unlike Pixelated, it intentionally permits true one-bit crushing and stacks multiple distortion mechanisms. DRIVE controls the wet intensity; all other model algorithms and the upstream HumpDSP files remain untouched.
+- Lo-Fi's six main controls fit the existing three-by-two distortion grid: top **DRIVE / RATE / BITS**, bottom **CLIP / RECTIFY / NOISE**. RATE covers native sample rate through approximately 180 Hz; BITS spans 1 to 16 bits. The two optional anti-alias stages are adjusted via the **RATE right-click menu**, with independent OFF/25/50/75/100% choices and ENV target assignment/removal; their internal host parameters remain continuous 0–100%. Anti-alias filtering is intentionally optional, default OFF for a raw digital-degradation character.
+- The five new main parameters and two AA parameters are saved, host-automatable and appended to the existing sequencer/envelope parameter target catalogue as IDs **123–129**. Existing IDs **1–122**, the 32 sequencer steps, 16 sequencer target slots and eight envelope slots are unchanged. The Lo-Fi processor runs only as the selected type or an outgoing crossfade; its seven control smoothers advance only while in use, without audio-thread allocation. Filter/rate lookup tables are prepared before audio processing.
+- Updated CMake, Windows build script, GUI version label and instructional README to **1.42.0**. The source ZIP excludes the user's `Resources` folder. Standalone four-sample-rate control-impact and extreme-parameter checks passed; the Windows JUCE VST3 build, in-DAW listening, layout and measured CPU use remain unverified.
+
+## v1.41.3 — EQ/ENV theme-red selection styling (2026-11-23)
+
+- EQ and ENV view selectors use the existing theme-bar muted red (#8e414b) for their selected outline, label and translucent background. Their amber power LEDs, independent power states, view switching, button sizes and rounded corners remain unchanged.
+- PHAT retains **exactly** its v1.41.2 styling and behaviour, including its yellow selected text, border and translucent background. LP/BP/HP filter selectors and RESET are unchanged.
+- GUI-only colour update; CMake metadata, build script, on-screen version and instructional README increased to v1.41.3. No DSP, parameter, sequencer or Resources changes. Windows VST3/DAW verification pending.
+
+## v1.41.2 — Combined EQ/ENV view-power selectors and unified yellow buttons (2026-11-23)
+
+- Moved the existing independently powered EQ and ENV LEDs inside the left sides of their respective view-selector buttons. Clicking the LED still toggles its APVTS-attached effect enable parameter; clicking the rest of that button changes the visible EQ/ENV view only. Both combined selectors remain visible regardless of the selected view.
+- Matched EQ, ENV and PHAT button fill, outline, label colour and 2.6 px corner radius to the LP/BP/HP filter-shape buttons: selected = translucent yellow background, yellow border and yellow text. Unselected buttons use the same dark background and muted outline/text as inactive filter selectors. RESET shares the inactive artwork and remains a momentary EQ reset.
+- Re-centred the EQ header controls and restored the taller EQ response graph now that the second LED no longer consumes a separate row. No main panel geometry changes.
+- Updated the build script, CMake/JUCE metadata, on-screen label and README to **v1.41.2**. DSP, saved parameters, target assignments, sequencer and Resources unchanged. Windows VST3/DAW verification pending.
+
+## v1.41.1 — Persistent EQ/ENV power LEDs and uniform header buttons (2026-11-23)
+
+- Both EQ and ENV power LEDs now remain visible and clickable when either EQ or ENV is selected, stacked vertically with independent EQ/ENV labels and on/off states. They are hidden only by the unrelated preset-browser overlay.
+- EQ, ENV and RESET view/header buttons all use the same 50 x 23 px standard text-button artwork with 3 px corner radii and matching font; active EQ/ENV selection remains highlighted in muted red.
+- Renamed FLAT to RESET, including tooltip/help text, without changing the EQ reset action. Lowered the EQ graph by 8 px and reduced its height by 8 px to keep it clear of the lower LED.
+- Updated versions in GUI, CMake, build script and instructional README to **1.41.1**. No processor DSP, parameter IDs, sequencer behaviour or resource files changed. Windows VST3/DAW verification remains pending.
+
+## v1.41.0 — Global envelope follower and selectable shared filter shapes (2026-11-23)
+
+- Added three compact clickable response-curve icons between FILTER CUT and RES: LP (the untouched original Hump resonant low-pass/fat-limiter processing), new resonant BP and new resonant HP. Only the selected shared shape runs; FILTER remains independent of the distortion model. Mode is preset-saved and host-automatable; default LP.
+- Added EQ/ENV selector to the existing 332-pixel EQ panel. This changes only the displayed controls. Each processor retains its own power LED and remains active when the alternate view is shown; no new main panel and no overall size change.
+- Implemented a global pre-distortion stereo-linked peak envelope follower, with host-automatable SENS, ATTACK, RELEASE and bipolar DEPTH, activity meter, and independent ENABLE. Its detector only runs when enabled and an ENV target is assigned; the modulation is resolved at audio-block control rate and applied through the existing smoothed control paths.
+- Added eight independent host-saved envelope assignment slots reusing the existing 122 sequencer target parameter choices, without changing the sequencer's 32 steps or 16 target slots. Right-click any target-enabled knob/label to assign or remove a target. EQ point menus gain separate ENV Gain and ENV Freq assignment/removal. The ENV modulation combines with sequencer modulation without modifying the underlying saved values. Existing EQ display follows the combined modulated values.
+- Kept all 19 distortion DSP engines, the original HumpDSP source, global seven-band EQ implementation, compressor, master and sequencer architecture untouched. No legacy-parameter migration or backwards-compatibility layer is included, as Crusher has no existing release presets requiring one.
+- Updated CMake, VST3 version, build script, GUI version and README to **1.41.0**. Development ZIP excludes Resources; standalone DSP and static checks performed, Windows VST3 build/DAW verification and actual CPU measurements pending.
+
+
 ## v1.40.0 — Sequencer modulation of all seven EQ graph points (2026-11-23)
 
 - Added right-click menu actions **Set Seq Target Gain** (EQ point Gain/dB) and **Set Seq Target Freq** (EQ point Frequency/Hz) to each of the seven existing EQ points. Original filter-shape menu remains available.

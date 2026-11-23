@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(Crusher VERSION 1.40.0 LANGUAGES C CXX)
+project(Crusher VERSION 1.43.2 LANGUAGES C CXX)
 
 set(JUCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../../_Tools/JUCE/_9.0.4")
 if(NOT EXISTS "${JUCE_DIR}/CMakeLists.txt")
@@ -8,7 +8,7 @@ endif()
 add_subdirectory("${JUCE_DIR}" "${CMAKE_BINARY_DIR}/JUCE")
 
 juce_add_plugin(Crusher
-    VERSION 1.40.0
+    VERSION 1.43.2
     COMPANY_NAME "sl23"
     BUNDLE_ID "com.sl23.crusher"
     IS_SYNTH FALSE
@@ -38,7 +38,7 @@ juce_add_binary_data(CrusherResources SOURCES ${CRUSHER_RESOURCE_FILES})
 juce_generate_juce_header(Crusher)
 target_sources(Crusher PRIVATE
     PluginProcessor.cpp PluginProcessor.h CrusherDistortion.cpp
-    CrusherAmpSim.h CrusherAsym.h CrusherBumpy.h CrusherComb.h CrusherCrackle.h CrusherDiodeClip.h CrusherFresh.h CrusherFuzz.h CrusherHardClip.h CrusherHump.h CrusherLightning.h CrusherPixelated.h CrusherRazor.h CrusherRectify.h CrusherSamurai.h CrusherSaturation.h CrusherSoftClip.h CrusherGraphicEQ.h
+    CrusherAmpSim.h CrusherAsym.h CrusherBumpy.h CrusherComb.h CrusherCrackle.h CrusherCodec.h CrusherDiodeClip.h CrusherFresh.h CrusherFuzz.h CrusherHardClip.h CrusherHump.h CrusherLightning.h CrusherLoFi.h CrusherPixelated.h CrusherRazor.h CrusherRectify.h CrusherSamurai.h CrusherSaturation.h CrusherSoftClip.h CrusherGraphicEQ.h
     CrusherStressed.h CrusherTube.h
     PluginEditor.cpp PluginEditor.h
     CrusherSequencer.h)
