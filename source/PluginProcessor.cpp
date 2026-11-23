@@ -36,6 +36,11 @@ constexpr auto crackleBurst = "crackleBurst";
 constexpr auto crackleDecay = "crackleDecay";
 constexpr auto crackleGrit = "crackleGrit";
 constexpr auto crackleTone = "crackleTone";
+constexpr auto diodeInputHP = "diodeInputHP";
+constexpr auto diodeEnvelope = "diodeEnvelope";
+constexpr auto diodeShape = "diodeShape";
+constexpr auto diodeOutputHP = "diodeOutputHP";
+constexpr auto diodeOutputLP = "diodeOutputLP";
 constexpr auto lightningSpark = "lightningSpark";
 constexpr auto lightningReact = "lightningReact";
 constexpr auto lightningClip = "lightningClip";
@@ -322,7 +327,7 @@ CrusherAudioProcessor::createParameterLayout()
         juce::StringArray { "Soft Clip", "Saturation", "Tube", "Rectify",
             "Crackle", "Lightning", "Amp", "Bumpy", "Asym", "Razor",
             "Pixelated", "Comb", "Stressed", "Samurai", "Fresh",
-            "Hard Clip", "Fuzz", "Hump" }, 6));
+            "Hard Clip", "Fuzz", "Hump", "Diode Clip" }, 6));
     // Shared wet-engine controls: stereo is the original, untouched default.
     layout.push_back(std::make_unique<APC>(
         juce::ParameterID(ParameterIds::distMode, 1), "Distortion Input Mode",
@@ -378,6 +383,18 @@ CrusherAudioProcessor::createParameterLayout()
              { ParameterIds::crackleDecay, "Crackle Decay" },
              { ParameterIds::crackleGrit, "Crackle Grit" },
              { ParameterIds::crackleTone, "Crackle Tone" } }})
+        layout.push_back(std::make_unique<APF>(
+            juce::ParameterID(item.first, 1), item.second,
+            juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
+            percentageAttributes));
+
+    // Original diode-inspired clipper; these are new controls, not AIR DSP.
+    for (const auto& item : std::array<std::pair<const char*, const char*>, 5> {{
+             { ParameterIds::diodeInputHP, "Diode Input HP" },
+             { ParameterIds::diodeEnvelope, "Diode Env Speed" },
+             { ParameterIds::diodeShape, "Diode Shape" },
+             { ParameterIds::diodeOutputHP, "Diode Output HP" },
+             { ParameterIds::diodeOutputLP, "Diode Output LP" } }})
         layout.push_back(std::make_unique<APF>(
             juce::ParameterID(item.first, 1), item.second,
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
@@ -770,6 +787,11 @@ void CrusherAudioProcessor::bindParameterPointers()
     raw.crackleDecay = bind(ParameterIds::crackleDecay);
     raw.crackleGrit = bind(ParameterIds::crackleGrit);
     raw.crackleTone = bind(ParameterIds::crackleTone);
+    raw.diodeInputHP = bind(ParameterIds::diodeInputHP);
+    raw.diodeEnvelope = bind(ParameterIds::diodeEnvelope);
+    raw.diodeShape = bind(ParameterIds::diodeShape);
+    raw.diodeOutputHP = bind(ParameterIds::diodeOutputHP);
+    raw.diodeOutputLP = bind(ParameterIds::diodeOutputLP);
     raw.lightningSpark = bind(ParameterIds::lightningSpark);
     raw.lightningReact = bind(ParameterIds::lightningReact);
     raw.lightningClip = bind(ParameterIds::lightningClip);
@@ -1002,6 +1024,7 @@ void CrusherAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock
     currentSampleRate = juce::jmax(1.0, sampleRate);
     rectifyProcessor.prepare(currentSampleRate);
     crackleProcessor.prepare(currentSampleRate);
+    diodeProcessor.prepare(currentSampleRate);
     lightningProcessor.prepare(currentSampleRate);
     pixelatedProcessor.prepare(currentSampleRate);
     razorProcessor.prepare(currentSampleRate);
@@ -1063,6 +1086,11 @@ void CrusherAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock
     resetSmoother(crackleDecayValue, load(raw.crackleDecay) * 0.01f);
     resetSmoother(crackleGritValue, load(raw.crackleGrit) * 0.01f);
     resetSmoother(crackleToneValue, load(raw.crackleTone) * 0.01f);
+    resetSmoother(diodeInputHPValue, load(raw.diodeInputHP) * 0.01f);
+    resetSmoother(diodeEnvelopeValue, load(raw.diodeEnvelope) * 0.01f);
+    resetSmoother(diodeShapeValue, load(raw.diodeShape) * 0.01f);
+    resetSmoother(diodeOutputHPValue, load(raw.diodeOutputHP) * 0.01f);
+    resetSmoother(diodeOutputLPValue, load(raw.diodeOutputLP) * 0.01f);
     resetSmoother(lightningSparkValue, load(raw.lightningSpark) * 0.01f);
     resetSmoother(lightningReactValue, load(raw.lightningReact) * 0.01f);
     resetSmoother(lightningClipValue, load(raw.lightningClip) * 0.01f);
@@ -1366,7 +1394,7 @@ void CrusherAudioProcessor::processBlock(
     const bool filterOn = load(raw.filterEnabled) >= 0.5f;
     const bool compOn = load(raw.compEnabled) >= 0.5f;
     // Dispatch only the selected algorithm; during a short type-change
-    // crossfade process the outgoing model too, never all 18 engines.
+    // crossfade process the outgoing model too, never all 19 engines.
     const int selectedDistortion = juce::jlimit(
         0, distortionTypeCount - 1,
         static_cast<int>(std::lround(load(raw.distortionType))));
@@ -1404,6 +1432,8 @@ void CrusherAudioProcessor::processBlock(
         || (transitioningModels && previousDistortionType == 10));
     const bool lightningInUse = distortionMayRun && (currentDistortionType == 5
         || (transitioningModels && previousDistortionType == 5));
+    const bool diodeInUse = distortionMayRun && (currentDistortionType == 18
+        || (transitioningModels && previousDistortionType == 18));
     const bool crackleInUse = distortionMayRun && (currentDistortionType == 4
         || (transitioningModels && previousDistortionType == 4));
     const bool freshInUse = distortionMayRun && (currentDistortionType == 14
@@ -1431,6 +1461,23 @@ void CrusherAudioProcessor::processBlock(
             crusher::sequencer::ampBiasTargetChoice, raw.ampBias) * 0.01f);
         ampSimulator.setControls(ampControls);
     }
+    const auto updateDiodeControl = [diodeInUse](LinearSmoother& smoother,
+                                                  float target) noexcept
+    {
+        if (diodeInUse) smoother.setTargetValue(target);
+        else smoother.setCurrentAndTargetValue(target);
+    };
+    updateDiodeControl(diodeInputHPValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::diodeInputHPTargetChoice, raw.diodeInputHP) * 0.01f));
+    updateDiodeControl(diodeEnvelopeValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::diodeEnvelopeTargetChoice, raw.diodeEnvelope) * 0.01f));
+    updateDiodeControl(diodeShapeValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::diodeShapeTargetChoice, raw.diodeShape) * 0.01f));
+    updateDiodeControl(diodeOutputHPValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::diodeOutputHPTargetChoice, raw.diodeOutputHP) * 0.01f));
+    updateDiodeControl(diodeOutputLPValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::diodeOutputLPTargetChoice, raw.diodeOutputLP) * 0.01f));
+
     // Do not perform Bumpy DSP or advance its smoothers for inactive models.
     const auto updateBumpyControl = [bumpyInUse](LinearSmoother& smoother,
                                                  float target) noexcept
@@ -1768,8 +1815,15 @@ void CrusherAudioProcessor::processBlock(
     for (int band = 0; band < crusher::eq::bandCount; ++band)
     {
         auto& b = eqBands[static_cast<size_t>(band)];
-        b.frequency = load(raw.eqFrequency[static_cast<size_t>(band)]);
-        b.gainDb = load(raw.eqGain[static_cast<size_t>(band)]);
+        // The graph positions are real APVTS parameters; sequencer modulation
+        // is applied to their DSP values without overwriting saved/host values.
+        // Recalculate coefficients only on changes (GraphicEQ::update).
+        b.frequency = sequenced(
+            crusher::sequencer::eqHorizontalTargetChoice(band),
+            raw.eqFrequency[static_cast<size_t>(band)]);
+        b.gainDb = sequenced(
+            crusher::sequencer::eqVerticalTargetChoice(band),
+            raw.eqGain[static_cast<size_t>(band)]);
         b.q = load(raw.eqQ[static_cast<size_t>(band)]);
         b.shape = juce::jlimit(0, 5,
             juce::roundToInt(load(raw.eqShape[static_cast<size_t>(band)])));
@@ -1899,6 +1953,16 @@ void CrusherAudioProcessor::processBlock(
                 crackleControls.grit = crackleGritValue.getNextValue();
                 crackleControls.tone = crackleToneValue.getNextValue();
                 crackleProcessor.setControls(crackleControls);
+            }
+            if (diodeInUse)
+            {
+                crusher::diodeclip::Controls controls;
+                controls.inputHP = diodeInputHPValue.getNextValue();
+                controls.envelope = diodeEnvelopeValue.getNextValue();
+                controls.diode = diodeShapeValue.getNextValue();
+                controls.outputHP = diodeOutputHPValue.getNextValue();
+                controls.outputLP = diodeOutputLPValue.getNextValue();
+                diodeProcessor.setControls(controls);
             }
             if (pixelatedInUse)
             {

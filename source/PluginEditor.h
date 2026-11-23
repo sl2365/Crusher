@@ -145,6 +145,7 @@ private:
         explicit LookAndFeel(bool compactPopupFont = false);
         juce::Label* createSliderTextBox(juce::Slider&) override;
         juce::Font getPopupMenuFont() override;
+        void setZoomPopupScale(float scale) noexcept { zoomPopupScale = scale; }
         juce::Font getComboBoxFont(juce::ComboBox&) override;
         void drawRotarySlider(juce::Graphics&, int, int, int, int,
                               float, float, float, juce::Slider&) override;
@@ -174,10 +175,12 @@ private:
     private:
         juce::Colour popupBorderColour { 0xff1479b8 };
         bool useCompactPopupFont = false;
+        float zoomPopupScale = 1.0f;
     };
 
     CrusherAudioProcessor& processor;
     LookAndFeel lookAndFeel;
+    LookAndFeel zoomMenuLookAndFeel;
     juce::Component content;
     std::vector<std::unique_ptr<Dial>> dials;
     Dial* driveDial = nullptr;
@@ -205,6 +208,11 @@ private:
     Dial* crackleDecayDial = nullptr;
     Dial* crackleGritDial = nullptr;
     Dial* crackleToneDial = nullptr;
+    Dial* diodeInputHPDial = nullptr;
+    Dial* diodeEnvelopeDial = nullptr;
+    Dial* diodeShapeDial = nullptr;
+    Dial* diodeOutputHPDial = nullptr;
+    Dial* diodeOutputLPDial = nullptr;
     Dial* lightningSparkDial = nullptr;
     Dial* lightningReactDial = nullptr;
     Dial* lightningClipDial = nullptr;

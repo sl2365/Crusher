@@ -11,6 +11,7 @@
 #include "CrusherBumpy.h"
 #include "CrusherComb.h"
 #include "CrusherCrackle.h"
+#include "CrusherDiodeClip.h"
 #include "CrusherFresh.h"
 #include "CrusherFuzz.h"
 #include "CrusherHardClip.h"
@@ -81,7 +82,7 @@ public:
 private:
     static constexpr int stateSchemaVersion = 3;
     static constexpr int channelCount = 2;
-    static constexpr int distortionTypeCount = 18;
+    static constexpr int distortionTypeCount = 19;
     static constexpr int humpDistortionType = 17;
 
     using LinearSmoother = juce::SmoothedValue<
@@ -112,6 +113,11 @@ private:
         std::atomic<float>* crackleDecay = nullptr;
         std::atomic<float>* crackleGrit = nullptr;
         std::atomic<float>* crackleTone = nullptr;
+        std::atomic<float>* diodeInputHP = nullptr;
+        std::atomic<float>* diodeEnvelope = nullptr;
+        std::atomic<float>* diodeShape = nullptr;
+        std::atomic<float>* diodeOutputHP = nullptr;
+        std::atomic<float>* diodeOutputLP = nullptr;
         std::atomic<float>* lightningSpark = nullptr;
         std::atomic<float>* lightningReact = nullptr;
         std::atomic<float>* lightningClip = nullptr;
@@ -332,6 +338,12 @@ private:
     LinearSmoother lightningEdgeValue;
     LinearSmoother lightningToneValue;
     crusher::crackle::Processor crackleProcessor;
+    crusher::diodeclip::Processor diodeProcessor;
+    LinearSmoother diodeInputHPValue;
+    LinearSmoother diodeEnvelopeValue;
+    LinearSmoother diodeShapeValue;
+    LinearSmoother diodeOutputHPValue;
+    LinearSmoother diodeOutputLPValue;
     LinearSmoother crackleDensityValue;
     LinearSmoother crackleBurstValue;
     LinearSmoother crackleDecayValue;

@@ -114,7 +114,7 @@ juce::Path makeStarPath(juce::Rectangle<float> bounds)
     return path;
 }
 
-constexpr std::array<const char*, 18> distortionSummaries
+constexpr std::array<const char*, 19> distortionSummaries
 {
     "Dense tanh clipping with strong static level compensation",
     "Open arctangent saturation with brighter, gentler harmonics",
@@ -133,9 +133,10 @@ constexpr std::array<const char*, 18> distortionSummaries
     "Bright high-band excitation over restrained clean saturation",
     "Clean flat-threshold clipping without added noise or tone filtering",
     "High-gain asymmetric fuzz with compressed sustain and a restrained top end",
-    "Mechanical and tube waveshaping with optional tone-shaping controls"
+    "Mechanical and tube waveshaping with optional tone-shaping controls",
+    "Asymmetric diode-inspired clipping with envelope-sensitive response and filtering"
 };
-constexpr std::array<const char*, 18> distortionDetails
+constexpr std::array<const char*, 19> distortionDetails
 {
     "DIST increases density and compression through a level-compensated soft curve.",
     "DIST moves smoothly from clean into open saturation without darkening the top end.",
@@ -154,8 +155,10 @@ constexpr std::array<const char*, 18> distortionDetails
     "DIST adds clear upper harmonics and presence while leaving the low band comparatively intact.",
     "DIST lowers the clipping threshold for progressively harder, squared-off transients.",
     "DIST increases asymmetric clipping, dense sustain and dark post-clip fuzz colour.",
-    "MECH and TUBE provide the main character; BODY, BIAS, FOLD and TONE add variation."
+    "MECH and TUBE provide the main character; BODY, BIAS, FOLD and TONE add variation.",
+    "DRIVE controls clipping; IN HP, ENV, DIODE, OUT HP and OUT LP shape its response."
 };
+static_assert(distortionSummaries.size() == distortionDetails.size());
 
 juce::Colour filterColourForId(int filterIndex, int typeId)
 {
@@ -2785,7 +2788,8 @@ void CrusherAudioProcessorEditor::ParameterDragLabel::mouseDrag(
 
 // Global seven-band graph, independent of the chosen distortion model.
 // A normal drag changes frequency/gain with host gestures; the wheel changes
-// Q. Right-click a point to select its filter shape; double-click resets it.
+// Q. Right-click chooses the filter shape or assigns that point's X/Y
+// parameter to the existing sequencer; double-click resets the band.
 class CrusherAudioProcessorEditor::EQGraph final : public juce::Component,
                                                      public juce::SettableTooltipClient,
                                                      private juce::Timer
@@ -2803,7 +2807,7 @@ public:
             b.shape = processor.parameters.getParameter(prefix + "Shape");
         }
         setName("EQ graph");
-        setTooltip("EQ GRAPH | Drag a point to change Hz/dB; wheel sets Q; right-click changes shape; double-click resets the band.");
+        setTooltip("EQ GRAPH | Drag to adjust frequency and gain; right-click a point to select its shape or assign horizontal/vertical sequencer targets.");
         startTimerHz(24);
     }
 
@@ -2838,7 +2842,7 @@ public:
         std::array<crusher::eq::Coefficients, crusher::eq::bandCount> coeffs {};
         for (int i = 0; i < crusher::eq::bandCount; ++i)
             coeffs[static_cast<size_t>(i)] = crusher::eq::makeCoefficients(
-                readBand(i), sampleRate, false);
+                displayBand(i), sampleRate, false);
         juce::Path response;
         for (int x = 0; x <= juce::roundToInt(area.getWidth()); x += 2)
         {
@@ -2860,7 +2864,7 @@ public:
                0xffd8809c, 0xffa6cc68, 0xffef995b }};
         for (int i = 0; i < crusher::eq::bandCount; ++i)
         {
-            const auto b = readBand(i);
+            const auto b = displayBand(i);
             const juce::Point<float> point(xForFrequency(b.frequency), yForGain(b.gainDb));
             const float radius = i == selectedBand ? 6.1f : 4.6f;
             g.setColour(juce::Colour(0xff171b20));
@@ -2980,6 +2984,19 @@ private:
         return { parameterValue(b.frequency), parameterValue(b.gain),
                  parameterValue(b.q), juce::roundToInt(parameterValue(b.shape)) };
     }
+    crusher::eq::Band displayBand(int index) const noexcept
+    {
+        auto band = readBand(index);
+        const auto& handle = handles[static_cast<size_t>(index)];
+        const auto prefix = "eq" + juce::String(index + 1);
+        if (const auto value = processor.getSequencerAnimatedNormalised(prefix + "Freq"))
+            if (handle.frequency != nullptr)
+                band.frequency = handle.frequency->convertFrom0to1(*value);
+        if (const auto value = processor.getSequencerAnimatedNormalised(prefix + "Gain"))
+            if (handle.gain != nullptr)
+                band.gainDb = handle.gain->convertFrom0to1(*value);
+        return band;
+    }
     juce::Rectangle<float> graphArea() const noexcept
     {
         return { 11.0f, 8.0f, static_cast<float>(juce::jmax(1, getWidth() - 22)),
@@ -3017,7 +3034,7 @@ private:
         int closest = 0;
         for (int i = 0; i < crusher::eq::bandCount; ++i)
         {
-            const auto b = readBand(i);
+            const auto b = displayBand(i);
             const float dx = xForFrequency(b.frequency) - point.x;
             const float dy = yForGain(b.gainDb) - point.y;
             const float candidate = dx * dx + dy * dy;
@@ -3025,6 +3042,68 @@ private:
         }
         return closest;
     }
+    // Assign an EQ coordinate just like dropping a knob label onto the
+    // target list: reuse an existing slot, otherwise take the first empty one.
+    // Both directions are independent and share the normal 16-slot limit.
+    bool assignSequencerTarget(int band, bool vertical)
+    {
+        const int requested = vertical
+            ? crusher::sequencer::eqVerticalTargetChoice(band)
+            : crusher::sequencer::eqHorizontalTargetChoice(band);
+        int freeSlot = -1;
+        for (int slot = 0; slot < crusher::sequencer::targetSlotCount; ++slot)
+        {
+            auto* choice = processor.parameters.getParameter(
+                crusher::sequencer::targetParameterId(slot));
+            if (choice == nullptr)
+                continue;
+            const int existing = juce::roundToInt(
+                choice->convertFrom0to1(choice->getValue()));
+            if (existing == requested)
+            {
+                setParameterActualValue(processor.parameters.getParameter(
+                    crusher::sequencer::targetEnabledParameterId(slot)), 1.0f);
+                return true;
+            }
+            if (existing == 0 && freeSlot < 0)
+                freeSlot = slot;
+        }
+        if (freeSlot < 0)
+            return false;
+        setParameterActualValue(processor.parameters.getParameter(
+            crusher::sequencer::targetParameterId(freeSlot)),
+            static_cast<float>(requested));
+        setParameterActualValue(processor.parameters.getParameter(
+            crusher::sequencer::targetEnabledParameterId(freeSlot)), 1.0f);
+        return true;
+    }
+
+    bool isTargetAssigned(int choice) const
+    {
+        for (int slot = 0; slot < crusher::sequencer::targetSlotCount; ++slot)
+        {
+            auto* target = processor.parameters.getParameter(
+                crusher::sequencer::targetParameterId(slot));
+            if (target != nullptr && juce::roundToInt(
+                target->convertFrom0to1(target->getValue())) == choice)
+                return true;
+        }
+        return false;
+    }
+
+    bool hasTargetSlotAvailable() const
+    {
+        for (int slot = 0; slot < crusher::sequencer::targetSlotCount; ++slot)
+        {
+            auto* target = processor.parameters.getParameter(
+                crusher::sequencer::targetParameterId(slot));
+            if (target != nullptr && juce::roundToInt(
+                target->convertFrom0to1(target->getValue())) == 0)
+                return true;
+        }
+        return false;
+    }
+
     void showShapeMenu()
     {
         juce::PopupMenu menu;
@@ -3034,18 +3113,32 @@ private:
                                         "Notch", "Low Cut", "High Cut" };
         for (int i = 0; i < names.size(); ++i)
             menu.addItem(i + 1, names[i], true, active == i);
+
+        menu.addSeparator();
+        const int vert = crusher::sequencer::eqVerticalTargetChoice(selectedBand);
+        const int horz = crusher::sequencer::eqHorizontalTargetChoice(selectedBand);
+        const bool available = hasTargetSlotAvailable();
+        menu.addItem(101, "Set Seq Target Gain", available || isTargetAssigned(vert),
+                     isTargetAssigned(vert));
+        menu.addItem(102, "Set Seq Target Freq", available || isTargetAssigned(horz),
+                     isTargetAssigned(horz));
+        if (! available && ! isTargetAssigned(vert) && ! isTargetAssigned(horz))
+            menu.addItem(103, "All 16 target slots occupied", false);
+
         const int captured = selectedBand;
         juce::Component::SafePointer<EQGraph> safe(this);
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),
             [safe, captured](int result)
             {
-                if (safe != nullptr && result > 0)
-                {
-                    safe->selectedBand = captured;
+                if (safe == nullptr || result == 0)
+                    return;
+                safe->selectedBand = captured;
+                if (result == 101 || result == 102)
+                    safe->assignSequencerTarget(captured, result == 101);
+                else if (result >= 1 && result <= 6)
                     setWithGesture(safe->handles[static_cast<size_t>(captured)].shape,
                                    static_cast<float>(result - 1));
-                    safe->repaint();
-                }
+                safe->repaint();
             });
     }
     void timerCallback() override { if (isShowing() && ! dragging) repaint(); }
@@ -3078,6 +3171,7 @@ juce::Font CrusherAudioProcessorEditor::LookAndFeel::getPopupMenuFont()
     auto font = juce::LookAndFeel_V4::getPopupMenuFont();
     if (useCompactPopupFont)
         font.setHeight(juce::jmax(9.0f, font.getHeight() - 1.5f));
+    font.setHeight(font.getHeight() * zoomPopupScale);
     return font;
 }
 
@@ -3581,7 +3675,8 @@ void CrusherAudioProcessorEditor::LookAndFeel::drawPopupMenuBackground(
 {
     g.fillAll(juce::Colour(0xff14181d));
     g.setColour(popupBorderColour);
-    g.drawRect(0, 0, width, height, 2);
+    g.drawRect(0, 0, width, height,
+               juce::jmax(1, juce::roundToInt(2.0f * zoomPopupScale)));
 }
 
 juce::PopupMenu::Options
@@ -3626,7 +3721,7 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     content.addMouseListener(this, true);
     content.setInterceptsMouseClicks(false, true);
 
-    versionLabel.setText("v0.1.38", juce::dontSendNotification);
+    versionLabel.setText("v1.40.0", juce::dontSendNotification);
     versionLabel.setJustificationType(juce::Justification::centred);
     versionLabel.setColour(juce::Label::textColourId, knobIndicatorColour);
     versionLabel.setFont(juce::Font(juce::FontOptions(8.5f,
@@ -3661,6 +3756,11 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     crackleDecayDial = addDial("crackleDecay", "DECAY", "Crackle: make individual bursts shorter or longer; 50% is original.");
     crackleGritDial = addDial("crackleGrit", "GRIT", "Crackle: adjust the saturation harshness between smooth and rough; centre is original.");
     crackleToneDial = addDial("crackleTone", "TONE", "Crackle: adjust dark/bright harmonic balance after distortion; centre is neutral.");
+    diodeInputHPDial = addDial("diodeInputHP", "IN HP", "Diode Clip: high-pass before saturation, shaping bass-driven distortion.");
+    diodeEnvelopeDial = addDial("diodeEnvelope", "ENV", "Diode Clip: response speed of the signal-dependent clipping threshold.");
+    diodeShapeDial = addDial("diodeShape", "DIODE", "Diode Clip: change the positive and negative clipping curves.");
+    diodeOutputHPDial = addDial("diodeOutputHP", "OUT HP", "Diode Clip: high-pass the processed distortion to remove low frequencies.");
+    diodeOutputLPDial = addDial("diodeOutputLP", "OUT LP", "Diode Clip: low-pass the processed distortion to soften top-end harmonics.");
     pixelatedRateDial = addDial("pixelatedRate", "RATE", "Pixelated: sample-and-hold rate; 50% follows the original DRIVE response.");
     pixelatedBitsDial = addDial("pixelatedBits", "BITS", "Pixelated: quantisation bit depth, low for grit and high for cleaner resolution; centre is original.");
     pixelatedDitherDial = addDial("pixelatedDither", "DITHER", "Pixelated: noise added before quantisation; 50% matches the original.");
@@ -3907,6 +4007,7 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     distortionTypeBox.addItem("Bumpy", 8);
     distortionTypeBox.addItem("Comb", 12);
     distortionTypeBox.addItem("Crackle", 5);
+    distortionTypeBox.addItem("Diode Clip", 19);
     distortionTypeBox.addItem("Fresh", 15);
     distortionTypeBox.addItem("Fuzz", 17);
     distortionTypeBox.addItem("Hard Clip", 16);
@@ -3928,18 +4029,19 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
             *parameter,
             [this](float value)
             {
-                // A parameter value of 0..17 selects the original DSP index.
+                // Parameter values 0..18 map to dropdown item IDs 1..19.
                 distortionTypeBox.setSelectedId(
-                    juce::jlimit(1, 18, juce::roundToInt(value) + 1),
+                    juce::jlimit(1, 19, juce::roundToInt(value) + 1),
                     juce::dontSendNotification);
                 updateDistortionControls();
             }, nullptr);
     }
     distortionTypeBox.onChange = [this]
     {
-        const int type = juce::jlimit(
-            0, static_cast<int>(distortionSummaries.size()) - 1,
-            distortionTypeBox.getSelectedId() - 1);
+        const int type = distortionTypeBox.getSelectedId() - 1;
+        if (! juce::isPositiveAndBelow(type,
+                static_cast<int>(distortionSummaries.size())))
+            return;
         setParameterActualValue(
             processor.parameters.getParameter("distortionType"),
             static_cast<float>(type));
@@ -4308,6 +4410,11 @@ void CrusherAudioProcessorEditor::showZoomMenu(juce::Point<int> screenPosition)
     const int currentPercent = juce::roundToInt(
         100.0f * static_cast<float>(getWidth())
                / static_cast<float>(designWidth));
+    const float menuScale = juce::jlimit(0.75f, 3.0f,
+        static_cast<float>(getWidth()) / static_cast<float>(designWidth));
+    zoomMenuLookAndFeel.setZoomPopupScale(menuScale);
+    zoomMenuLookAndFeel.setPopupBorderColour(lookAndFeel.getPopupBorderColour());
+    menu.setLookAndFeel(&zoomMenuLookAndFeel);
     for (const int percent : { 75, 100, 125, 150, 175, 200,
                                225, 250, 275, 300 })
         menu.addItem(percent, juce::String(percent) + "%", true,
@@ -4317,6 +4424,8 @@ void CrusherAudioProcessorEditor::showZoomMenu(juce::Point<int> screenPosition)
     menu.showMenuAsync(juce::PopupMenu::Options()
                            .withTargetScreenArea({ screenPosition.x,
                                                    screenPosition.y, 1, 1 })
+                           .withMinimumWidth(juce::roundToInt(116.0f * menuScale))
+                           .withStandardItemHeight(juce::roundToInt(23.0f * menuScale))
                            .withPreferredPopupDirection(
                                juce::PopupMenu::Options::PopupDirection::downwards),
         [safeThis = juce::Component::SafePointer<CrusherAudioProcessorEditor>(this)]
@@ -4505,7 +4614,8 @@ void CrusherAudioProcessorEditor::updateSectionDimming()
                         humpToneDial, ampSoftDial, ampTopDial, ampBiasDial, bumpyRippleDial, bumpyRateDial, bumpyContourDial,
                         bumpyBiasDial, bumpyToneDial, combTimeDial, combFeedbackDial, combDampDial,
                         combSpreadDial, combToneDial, crackleDensityDial, crackleBurstDial, crackleDecayDial,
-                        crackleGritDial, crackleToneDial, lightningSparkDial, lightningReactDial, lightningClipDial,
+                        crackleGritDial, crackleToneDial, diodeInputHPDial, diodeEnvelopeDial,
+                        diodeShapeDial, diodeOutputHPDial, diodeOutputLPDial, lightningSparkDial, lightningReactDial, lightningClipDial,
                         lightningEdgeDial, lightningToneDial, pixelatedRateDial, pixelatedBitsDial, pixelatedDitherDial,
                         pixelatedJitterDial, pixelatedToneDial, rectifyWaveDial, rectifyBiasDial, rectifyCurveDial,
                         rectifyFoldDial, rectifyToneDial, softClipThresholdDial, softClipKneeDial, softClipBiasDial,
@@ -4559,6 +4669,7 @@ void CrusherAudioProcessorEditor::updateDistortionControls()
     const bool bumpySelected = selected == 7;
     const bool combSelected = selected == 11;
     const bool crackleSelected = selected == 4;
+    const bool diodeSelected = selected == 18;
     const bool lightningSelected = selected == 5;
     const bool pixelatedSelected = selected == 10;
     const bool rectifySelected = selected == 3;
@@ -4576,12 +4687,14 @@ void CrusherAudioProcessorEditor::updateDistortionControls()
     {
         driveDial->label.setVisible(visible && ! humpSelected);
         driveDial->slider.setVisible(visible && ! humpSelected);
-        const bool driveCaption = ampSelected || asymSelected || bumpySelected
+        const bool driveCaption = diodeSelected || ampSelected || asymSelected || bumpySelected
                                   || combSelected || crackleSelected || freshSelected
                                   || fuzzSelected || hardClipSelected || lightningSelected || pixelatedSelected || razorSelected || rectifySelected || samuraiSelected || saturationSelected || softClipSelected || stressedSelected || tubeSelected;
         driveDial->label.setText(driveCaption ? "DRIVE" : "DIST",
                                   juce::dontSendNotification);
-        driveDial->help = ampSelected
+        driveDial->help = diodeSelected
+            ? "Diode Clip drive: range from subtle clipping to aggressive harmonics."
+            : ampSelected
             ? "Amp input drive: 0-100%, controllable from the sequencer."
             : asymSelected
                 ? "Asym drive: controls saturation and distortion intensity."
@@ -4616,7 +4729,7 @@ void CrusherAudioProcessorEditor::updateDistortionControls()
                                     : samuraiSelected
                                         ? "Samurai drive: raises blade saturation, gating and metallic harmonics."
                                         : "Model-specific DIST amount for the selected distortion type.";
-        const auto sharedHelp = juce::String((ampSelected || asymSelected || bumpySelected || combSelected || crackleSelected || freshSelected || fuzzSelected || hardClipSelected || lightningSelected || pixelatedSelected || razorSelected || rectifySelected || samuraiSelected || saturationSelected || softClipSelected || stressedSelected || tubeSelected) ? "DRIVE" : "DIST")
+        const auto sharedHelp = juce::String((diodeSelected || ampSelected || asymSelected || bumpySelected || combSelected || crackleSelected || freshSelected || fuzzSelected || hardClipSelected || lightningSelected || pixelatedSelected || razorSelected || rectifySelected || samuraiSelected || saturationSelected || softClipSelected || stressedSelected || tubeSelected) ? "DRIVE" : "DIST")
                               + " | " + driveDial->help;
         driveDial->label.setTooltip(sharedHelp);
         driveDial->slider.setTooltip(sharedHelp);
@@ -4640,6 +4753,13 @@ void CrusherAudioProcessorEditor::updateDistortionControls()
         {
             dial->label.setVisible(visible && combSelected);
             dial->slider.setVisible(visible && combSelected);
+        }
+    for (auto* dial : { diodeInputHPDial, diodeEnvelopeDial, diodeShapeDial,
+                        diodeOutputHPDial, diodeOutputLPDial })
+        if (dial != nullptr)
+        {
+            dial->label.setVisible(visible && diodeSelected);
+            dial->slider.setVisible(visible && diodeSelected);
         }
     for (auto* dial : { crackleDensityDial, crackleBurstDial, crackleDecayDial,
                         crackleGritDial, crackleToneDial })
@@ -4893,7 +5013,8 @@ void CrusherAudioProcessorEditor::randomiseEffectParameters()
     juce::Random random;
     setParameterActualValue(
         processor.parameters.getParameter("distortionType"),
-        static_cast<float>(random.nextInt(18)));
+        static_cast<float>(random.nextInt(
+            static_cast<int>(distortionSummaries.size()))));
     setParameterActualValue(
         processor.parameters.getParameter("drive"),
         10.0f + random.nextFloat() * 70.0f);
@@ -5852,6 +5973,7 @@ void CrusherAudioProcessorEditor::resized()
     const bool bumpySelected = distortionTypeBox.getSelectedId() == 8;
     const bool combSelected = distortionTypeBox.getSelectedId() == 12;
     const bool crackleSelected = distortionTypeBox.getSelectedId() == 5;
+    const bool diodeSelected = distortionTypeBox.getSelectedId() == 19;
     const bool lightningSelected = distortionTypeBox.getSelectedId() == 6;
     const bool pixelatedSelected = distortionTypeBox.getSelectedId() == 11;
     const bool rectifySelected = distortionTypeBox.getSelectedId() == 4;
@@ -5868,7 +5990,7 @@ void CrusherAudioProcessorEditor::resized()
     // Shared DRIVE must remain at the top-left for every model that uses it.
     placeDial(driveDial,
         (ampSelected || asymSelected || bumpySelected || combSelected
-         || crackleSelected || freshSelected || fuzzSelected || hardClipSelected
+         || crackleSelected || diodeSelected || freshSelected || fuzzSelected || hardClipSelected
          || lightningSelected || pixelatedSelected || razorSelected
          || rectifySelected || samuraiSelected || saturationSelected
          || softClipSelected || stressedSelected || tubeSelected) ? 39 : 202,
@@ -5905,6 +6027,13 @@ void CrusherAudioProcessorEditor::resized()
     placeDial(combToneDial, 39, 154);
     placeDial(combDampDial, 120, 154);
     placeDial(combSpreadDial, 201, 154);
+
+    // Diode Clip: DRIVE / DIODE / ENV above IN HP / OUT HP / OUT LP.
+    placeDial(diodeShapeDial, 120, 67);
+    placeDial(diodeEnvelopeDial, 201, 67);
+    placeDial(diodeInputHPDial, 39, 154);
+    placeDial(diodeOutputHPDial, 120, 154);
+    placeDial(diodeOutputLPDial, 201, 154);
 
     placeDial(crackleDensityDial, 120, 67);
     placeDial(crackleBurstDial, 201, 67);

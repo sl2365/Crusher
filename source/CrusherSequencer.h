@@ -52,7 +52,7 @@ struct TargetInfo
     const char* displayName;
 };
 
-inline constexpr std::array<TargetInfo, 103> targets
+inline constexpr std::array<TargetInfo, 122> targets
 {{
     { "distOutput", "Dist Output" },
     { "mix", "Dry / Wet" },
@@ -157,6 +157,26 @@ inline constexpr std::array<TargetInfo, 103> targets
     { "tubeSag", "Tube Sag" },
     { "tubeBody", "Tube Body" },
     { "tubeTone", "Tube Tone" },
+    { "diodeInputHP", "Diode In HP" },
+    { "diodeEnvelope", "Diode Env" },
+    { "diodeShape", "Diode Shape" },
+    { "diodeOutputHP", "Diode Out HP" },
+    { "diodeOutputLP", "Diode Out LP" },
+    // EQ graph: vertical movement adjusts gain; horizontal movement adjusts frequency.
+    { "eq1Gain", "EQ 1 Gain" },
+    { "eq1Freq", "EQ 1 Freq" },
+    { "eq2Gain", "EQ 2 Gain" },
+    { "eq2Freq", "EQ 2 Freq" },
+    { "eq3Gain", "EQ 3 Gain" },
+    { "eq3Freq", "EQ 3 Freq" },
+    { "eq4Gain", "EQ 4 Gain" },
+    { "eq4Freq", "EQ 4 Freq" },
+    { "eq5Gain", "EQ 5 Gain" },
+    { "eq5Freq", "EQ 5 Freq" },
+    { "eq6Gain", "EQ 6 Gain" },
+    { "eq6Freq", "EQ 6 Freq" },
+    { "eq7Gain", "EQ 7 Gain" },
+    { "eq7Freq", "EQ 7 Freq" },
 }};
 
 inline constexpr int distOutputTargetChoice = 1;
@@ -262,8 +282,23 @@ inline constexpr int tubeHeatTargetChoice = 100;
 inline constexpr int tubeSagTargetChoice = 101;
 inline constexpr int tubeBodyTargetChoice = 102;
 inline constexpr int tubeToneTargetChoice = 103;
-
-
+inline constexpr int diodeInputHPTargetChoice = 104;
+inline constexpr int diodeEnvelopeTargetChoice = 105;
+inline constexpr int diodeShapeTargetChoice = 106;
+inline constexpr int diodeOutputHPTargetChoice = 107;
+inline constexpr int diodeOutputLPTargetChoice = 108;
+// Two sequencer targets for each of the seven EQ graph points.
+inline constexpr int eqTargetFirstChoice = 109;
+inline constexpr int eqVerticalTargetChoice(int band) noexcept
+{
+    return eqTargetFirstChoice + band * 2;
+}
+inline constexpr int eqHorizontalTargetChoice(int band) noexcept
+{
+    return eqTargetFirstChoice + band * 2 + 1;
+}
+static_assert(eqHorizontalTargetChoice(6) == static_cast<int>(targets.size()),
+              "EQ sequencer choices must match the target table");
 
 inline int targetChoiceForParameter(const juce::String& parameterId)
 {

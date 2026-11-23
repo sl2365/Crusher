@@ -1,5 +1,53 @@
 # Crusher Changelog
 
+## v1.40.0 — Sequencer modulation of all seven EQ graph points (2026-11-23)
+
+- Added right-click menu actions **Set Seq Target Gain** (EQ point Gain/dB) and **Set Seq Target Freq** (EQ point Frequency/Hz) to each of the seven existing EQ points. Original filter-shape menu remains available.
+- Appended 14 independent sequencer target choices (109–122) without renumbering the previous 108 or changing the 32-step / 16-slot sequencer. Existing assigned targets are re-enabled; otherwise the first empty slot is used. When all slots are full, assignment choices are disabled.
+- Applied target depth/direction to the EQ frequency and gain DSP values, preserving stored EQ parameter values and automation. The graph animates modulated points and the response curve, while retaining manual dragging, mouse-wheel Q and reset behaviour.
+- EQ coefficients remain recalculated only when band values change, using the existing smoothed biquads. No additional per-sample coefficient calculations, real-time allocations or processing of inactive distortion models. Fast modulation resolution remains limited by audio-block size.
+- Updated GUI, CMake and build versions to **1.40.0**; README remains instructional, with development changes only in this changelog. All 19 distortion DSP algorithms, original HumpDSP, and Resources are unchanged. Windows VST3/DAW and actual CPU results require local verification.
+
+## v1.39.0 — Diode Clip control alignment (2026-11-23)
+
+- Rearranged Diode Clip's controls into DRIVE / DIODE / ENV on the upper row and IN HP / OUT HP / OUT LP on the lower row, using the existing three-column knob grid.
+- Kept ENV's existing envelope-follower DSP intact. Its speed primarily changes transient clipping response and is intentionally subtle on sustained signals.
+- GUI-only correction. All DSP, parameters, host automation, sequencer mappings, effect panels and Resources remain unchanged.
+
+## v1.39.0 — Diode Clip menu and description mapping correction (2026-11-23)
+
+- Corrected the actual selection defect: the distortion menu change handler still clamped its internal model index to an 18-entry description array, silently rewriting Diode Clip (index 18) as Hump (index 17).
+- Added Diode Clip as the 19th entry in both description arrays; use the selected model index directly and guard invalid IDs instead of silently clamping them to another type.
+- Included all 19 models in the existing randomise function, and added a compile-time check that the two model-description arrays remain the same length.
+- No DSP, parameter IDs, sequencer mapping, graphics, Resources, or version changes. Windows VST3 build and DAW behaviour require verification.
+
+## v1.39.0 — Diode Clip dropdown selection fix (2026-11-23)
+
+- Corrected the distortion type menu parameter callback to accept all 19 item IDs rather than clamping to the previous 18. Choosing Diode Clip no longer resets the visible selection to Hump.
+- No change to distortion algorithms, audio routing, parameters, MIDI/host automation, sequencer, menu geometry, or the v1.39.0 version number.
+
+## v1.39.0 — Build-only correction (2026-11-23)
+
+- Fixed a Windows C2065 compile error in `PluginEditor.cpp::resized()` by defining `diodeSelected` using the Diode Clip dropdown ID (19) before the shared DRIVE layout condition.
+- No changes to DSP, parameters, zoom menu behavior, GUI positions, sequencer, or the 1.39.0 version number.
+
+## v1.39.0 — Diode Clip model and scaled logo menu (2026-11-23)
+
+- Added an original **Diode Clip** distortion type, appended as internal choice 19 without renumbering existing types or changing the Hump model.
+- Diode Clip has DRIVE plus IN HP, ENV, DIODE, OUT HP and OUT LP on Crusher's existing three-column by two-row knob grid. Five new controls are saved, host-automatable and drag-to-sequencer targets 104–108; sequencer remains 32 steps / 16 slots.
+- Independent DSP uses asymmetric smooth diode-inspired limiting, signal-responsive envelope, pre-emphasis high-pass and post high-/low-pass filters. The algorithm is independently designed rather than sourced from AIR Music Technology and is not guaranteed to match AIR Diode Clip. No third-party AIR code or assets are included.
+- Diode Clip DSP and smoothers run only when selected or temporarily fading out during a model crossfade. Coefficients are prepared outside the audio thread; no realtime allocations or per-sample exponentials are added.
+- Logo zoom menu now scales its font, popup width and item height to the editor zoom (75%–300%) while staying anchored to the logo's bottom-left. Actual positioning may be constrained by desktop work area at very large zoom levels.
+- No processing changes to the existing 18 distortion types, HumpDSP, shared seven-band EQ, FILTER, COMP, MIX/OUT or the sequencer architecture. Existing parameters and target choice indices remain undisturbed; no migration logic added. Resources excluded from source ZIP.
+- Static source, standalone DSP and archive checks performed; Windows JUCE/VST3 compile, in-DAW visual/audio testing and real CPU measurement remain outstanding.
+
+
+## v1.38.0 — First public release version (2026-11-23)
+
+- Promoted the version from v0.1.38 to v1.38.0 in JUCE/CMake plugin metadata, on-screen version label, build script and README.
+- No changes to DSP, effect controls, GUI geometry, parameter IDs, presets, sequencer, binary resources or processing behaviour.
+- This development source ZIP continues to exclude the user-maintained `Resources` folder; any public source release must provide the assets required to build its matching VST3 binary, with appropriate redistribution rights.
+
 ## v0.1.38 — Central seven-band EQ and fixed distortion-red strip (2026-11-23)
 
 - Reordered the main panels to **DISTORTION → OUTPUT/MODE → EQ → FILTER → COMP → MIX/OUT**, retaining precisely 6-pixel gaps and the original FILTER, COMP and MIX/OUT panel locations.

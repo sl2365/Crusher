@@ -125,7 +125,7 @@ float CrusherAudioProcessor::processDistortionType(
         && distortionType != 14 && distortionType != 15
         && distortionType != 16 && distortionType != 10
         && distortionType != 9 && distortionType != 13 && distortionType != 12
-        && distortionType != 2)
+        && distortionType != 2 && distortionType != 18)
         return sample;
 
     switch (juce::jlimit(0, distortionTypeCount - 1, distortionType))
@@ -147,6 +147,7 @@ float CrusherAudioProcessor::processDistortionType(
         case 14: return processFreshDrive(sample, amount, channel);
         case 15: return processHardClipDrive(sample, amount, channel);
         case 16: return processFuzzDrive(sample, amount, channel);
+        case 18: return diodeProcessor.process(sample, amount, channel);
         default: break;
     }
 
@@ -157,6 +158,7 @@ void CrusherAudioProcessor::resetDistortionState() noexcept
 {
     rectifyProcessor.reset();
     crackleProcessor.reset();
+    diodeProcessor.reset();
     lightningProcessor.reset();
     ampLowpassState.fill(0.0f);
     ampPreviousInput.fill(0.0f);
