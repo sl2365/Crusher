@@ -3850,7 +3850,7 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     }
 
     logoDrawable = juce::Drawable::createFromImageData(
-        BinaryData::logo_svg, static_cast<size_t>(BinaryData::logo_svgSize));
+        BinaryData::logo_png, static_cast<size_t>(BinaryData::logo_pngSize));
 #if defined(CRUSHER_HAS_BACKGROUND) && CRUSHER_HAS_BACKGROUND
     themeBackdrop = juce::ImageCache::getFromMemory(
         BinaryData::crusher_background_jpg,
@@ -3861,7 +3861,7 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     content.addMouseListener(this, true);
     content.setInterceptsMouseClicks(false, true);
 
-    versionLabel.setText("v1.45.0", juce::dontSendNotification);
+    versionLabel.setText("v1.45.2", juce::dontSendNotification);
     versionLabel.setJustificationType(juce::Justification::centred);
     versionLabel.setColour(juce::Label::textColourId, knobIndicatorColour);
     versionLabel.setFont(juce::Font(juce::FontOptions(8.5f,
@@ -4620,13 +4620,21 @@ bool CrusherAudioProcessorEditor::keyPressed(const juce::KeyPress& key)
 void CrusherAudioProcessorEditor::mouseDown(const juce::MouseEvent& event)
 {
     const auto position = event.getEventRelativeTo(&content).position;
-    if (event.mods.isLeftButtonDown()
-        && juce::Rectangle<float>(22.0f, 5.0f, 280.0f, 43.0f)
-               .contains(position))
+    if (event.mods.isLeftButtonDown() && logoDrawable != nullptr)
     {
-        showZoomMenu(content.localPointToGlobal(
-            juce::Point<int>(22, 48)));
-        return;
+        // Use the same proportional placement as the painted PNG, not
+        // the entire available header rectangle.
+        const auto logoBounds = juce::RectanglePlacement(
+            juce::RectanglePlacement::xLeft | juce::RectanglePlacement::yMid)
+            .appliedTo(logoDrawable->getDrawableBounds(),
+                       juce::Rectangle<float>(22.0f, 5.0f, 280.0f, 43.0f));
+        if (logoBounds.contains(position))
+        {
+            showZoomMenu(content.localPointToGlobal(juce::Point<int>(
+                juce::roundToInt(logoBounds.getX()),
+                juce::roundToInt(logoBounds.getBottom()))));
+            return;
+        }
     }
     if (! presetBrowserOpen || ! event.mods.isPopupMenu())
         return;
@@ -4660,8 +4668,8 @@ void CrusherAudioProcessorEditor::showZoomMenu(juce::Point<int> screenPosition)
                                225, 250, 275, 300 })
         menu.addItem(percent, juce::String(percent) + "%", true,
                      currentPercent == percent);
-    // The logo occupies local x=22..302, y=5..48. Anchor the popup's
-    // upper-left edge to its bottom-left corner, at any supported zoom.
+    // Anchor the popup to the rendered logo's bottom-left corner,
+    // at any supported zoom.
     menu.showMenuAsync(juce::PopupMenu::Options()
                            .withTargetScreenArea({ screenPosition.x,
                                                    screenPosition.y, 1, 1 })
@@ -6354,8 +6362,7 @@ void CrusherAudioProcessorEditor::paint(juce::Graphics& g)
         logoDrawable->drawWithin(
             g, juce::Rectangle<float>(22.0f, 5.0f, 280.0f, 43.0f),
             juce::RectanglePlacement::xLeft
-                | juce::RectanglePlacement::yMid
-                | juce::RectanglePlacement::onlyReduceInSize,
+                | juce::RectanglePlacement::yMid,
             1.0f);
     g.restoreState();
 }

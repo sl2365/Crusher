@@ -1,5 +1,14 @@
 # Crusher Changelog
 
+## v1.45.2 — PNG logo click area (2026-11-24)
+
+- Fit the zoom-menu click area to the actual proportionally rendered PNG rectangle rather than the fixed 280 × 43 header area. Anchor the popup to its bottom-left corner at every zoom level. Transparent padding within the PNG remains part of its image bounds. Logo rendering, DSP and all other controls are unchanged.
+
+## v1.45.1 — PNG logo support (2026-11-24)
+
+- Replaced the required SVG logo with `Resources/logo.png` in the Windows build check, CMake embedded binary resources and GUI image loader. The image fits proportionally in the existing 280 × 43 design-pixel logo area, with transparent pixels retained. The logo zoom-menu hit area and anchor remain unchanged. Rebuild after swapping artwork. Resources are excluded; DSP, parameter IDs and all 24 distortion types remain unchanged.
+- Retained the red README release badge and adopted the requested shortened introduction. Windows VST3 build and visual testing remain pending.
+
 ## v1.45.0 — Sampler distortion (2026-11-24)
 
 - Added Sampler as type 24 (stored index 23), with original vintage converter aperture, analogue loading, DAC code mismatch and reconstruction modelling. Five new controls MODEL, RATE, BITS, COLOUR and PUNCH, with shared DRIVE/OUTPUT; new targets 145–149. Existing IDs and DSP retained.

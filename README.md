@@ -15,16 +15,14 @@
 
 # Introduction
 
-**Crusher v1.45.0** is a Windows x64 VST3 distortion plugin by Dead Channel Audio. It combines 24 selectable distortion algorithms, a seven-band graphical EQ, a switchable LP/BP/HP filter, the Hump compressor, a 32-step sequencer and a global envelope follower. The original HumpCrusher MECH/TUBE signal path is selectable as **Hump**, with optional neutral-by-default enhancements. The original HumpDSP source is kept intact.
-
-Crusher is in active development. Earlier development presets and automation mappings are intentionally not supported when parameters are redesigned.
+**Crusher** is a Windows x64 VST3 distortion plugin by Dead Channel Audio. It combines 24 selectable distortion algorithms, a seven-band graphical EQ, a switchable LP/BP/HP filter, the Hump compressor, a 32-step sequencer and a global envelope follower. The original HumpCrusher MECH/TUBE signal path is selectable as **Hump**, with optional neutral-by-default enhancements.
 
 ## Signal flow and panel controls
 
 The interface panels run from left to right: **DISTORTION → OUTPUT/MODE → EQ → FILTER → COMP → MIX/OUT**. The OUTPUT/MODE panel is the same 66-pixel width as FILTER, COMP and MIX/OUT. All six top-level effect panels retain uniform 6-pixel gaps (matching the sequencer panel divider). The DISTORTION panel is 264 pixels wide and the EQ panel is 332 pixels wide. MIX/OUT remains in its original position.
 
 - **EQ / ENV:** Switch the enlarged centre panel between **EQ** and **ENV**. Each EQ/ENV selector contains its own amber power LED: click the small LED to enable or bypass that processor, or click the muted-red-highlighted button text to switch views. Both LEDs stay visible in either view; changing views never changes either processor's on/off state. In EQ view, use the shared seven-band graphical EQ with PRE, EMPH (emphasis plus complementary post-EQ) and POST modes. Seven draggable points span low bass to high treble. Toggle its amber LED to bypass. Drag points to set frequency and gain; use the mouse wheel to adjust bandwidth/Q, right-click for filter shape, and use RESET to restore all seven bands to neutral settings.
-- **DISTORTION:** Select one of 23 types from the alphabetical menu. Its amber LED bypasses the selected distortion; knobs change contextually. Six-knob types use an evenly spaced **3 × 2** grid (81-pixel columns), with the first lower-row control below DRIVE; Hump places TONE below its first control, MECH. Asym uses five knobs, with TONE below DRIVE. Amp uses DRIVE, SOFT CLIP and TOP BOOST above its smaller CAB dropdown and BIAS. The CAB dropdown is **120 × 20 pixels**, with the same proportions as before and the same height as the sequencer dropdowns.
+- **DISTORTION:** Select one of 24 types from the alphabetical menu. Its amber LED bypasses the selected distortion; knobs change contextually. Six-knob types use an evenly spaced **3 × 2** grid (81-pixel columns), with the first lower-row control below DRIVE; Hump places TONE below its first control, MECH. Asym uses five knobs, with TONE below DRIVE. Amp uses DRIVE, SOFT CLIP and TOP BOOST above its smaller CAB dropdown and BIAS. The CAB dropdown is **120 × 20 pixels**, with the same proportions as before and the same height as the sequencer dropdowns.
 - **OUTPUT:** Shared **±12 dB distortion-wet level**, neutral at **0 dB**. It is *not* the final master OUT. It is processed after the Hump filter/TUBE stages (where used) and before the EQ's post stage and compressor. The knob can be dragged to a sequencer target.
 - **STEREO/MONO:** Shared *pre-distortion input* selector, default **STEREO**. STEREO keeps the original independent left/right inputs. MONO averages the two input channels before the selected distortion (after any pre-EQ). This can change the distortion character because nonlinear waveshaping reacts differently to the sum. For Amp, MONO retains the pre-distortion summing behaviour of the previous Amp selector. Mono input does **not** promise identical stereo output: effects with internal stereo offsets or independent state, notably Comb, may generate differences later in the path.
 - **FILTER:** Shared resonant filtering after distortion, with CUT and RES, an amber power LED, and three miniature filter-response buttons between the knobs: **LP**, **BP**, **HP**. The highlighted icon is the selected filter mode. LP runs the original Hump low-pass and fat-limiter unchanged; BP and HP use newly modelled resonant biquads. The shape is host-automatable and saved. The selected mode applies to all 24 distortion models.
@@ -95,9 +93,9 @@ All five new controls are saved, automated and available to the existing sequenc
 ## THEME and optional background artwork
 
 - The horizontal colour strip is fixed to the same **muted distortion red (#8e414b)** used by THEME at 100%, regardless of distortion type. THEME is bipolar: **0%** shows the full background graphic, **50%** is plain charcoal (no graphic), and **100%** is solid muted distortion red. Positions between the endpoints fade continuously; double-click THEME to return to 50%.
-- To use custom artwork, place a JPEG named **`crusher_background.jpg`** in `_Projects\Crusher\Resources` beside your existing `logo.svg`, then rebuild by double-clicking `- Build.bat`. The image is optional; if missing, the plugin still builds and the left half of THEME uses plain charcoal. The selected image is embedded into the VST3 at build time, so changing the JPG requires another build.
+- To use custom artwork, place a JPEG named **`crusher_background.jpg`** in `_Projects\Crusher\Resources` beside your existing `logo.png`, then rebuild by double-clicking `- Build.bat`. The image is optional; if missing, the plugin still builds and the left half of THEME uses plain charcoal. The selected image is embedded into the VST3 at build time, so changing the JPG requires another build.
 - The artwork appears **only in the coloured surround** behind the main effect controls and sequencer. The dark control panels remain opaque, and the gap between the two sections is never covered. One image coordinate system spans both sections; a roughly **910 × 470** pixel artwork suits the reference layout (other image sizes are proportionally cropped to fill).
-- The development source ZIP deliberately excludes the entire `Resources` folder. Keep your own logo, background and screenshots in place. Do not rename the required JPEG.
+- The development source ZIP deliberately excludes the entire `Resources` folder. Keep your own logo, background and screenshots in place. The required logo must be named `logo.png`; the background JPEG is optional.
 
 ## Sequencer and presets
 
@@ -111,7 +109,7 @@ All five new controls are saved, automated and available to the existing sequenc
 ## Identity and storage
 
 - Project/output: `Crusher`, VST3 binary `Crusher.vst3`
-- Version: `1.45.0`; manufacturer `sl23`; plugin code `cru1`; bundle ID `com.sl23.crusher`
+- Version: `1.45.2`; manufacturer `sl23`; plugin code `cru1`; bundle ID `com.sl23.crusher`
 - State root: `CrusherParameters`, schema version **3**
 - Presets: `.crusherpreset`; sequences: `.crusherseq` (`CrusherSequence` state root)
 - Portable data: **`Crusher_Data`** beside the installed VST3 when needed; the build does not create this directory.
@@ -127,7 +125,7 @@ Crusher retains its original host parameter ranges and preset behaviour. Control
 - A writable VST3/data location for portable settings and presets.
 
 1. Extract the `Crusher` folder into `_Projects` beside `_Tools`, giving `_Projects\Crusher`.
-2. **Keep your own `Resources` folder.** This development source ZIP deliberately excludes Resources. Make sure `_Projects\Crusher\Resources\logo.svg` exists. Screenshots and `crusher_background.jpg` are optional at build time.
+2. **Keep your own `Resources` folder.** This development source ZIP deliberately excludes Resources. Make sure `_Projects\Crusher\Resources\logo.png` exists. To test another logo, replace that PNG with the desired artwork using the same filename, then double-click `- Build.bat` again. The logo is embedded in the VST3 during the build; PNG transparency and aspect ratio are preserved. Screenshots and `crusher_background.jpg` are optional at build time.
 3. Double-click `_Projects\Crusher\- Build.bat`.
 4. Check `Results.log` for PASS/FAIL. The compiled portable Windows VST3 binary is `_Projects\Crusher\dist\Crusher.vst3`; the script does not install the plugin.
 
@@ -147,7 +145,7 @@ Crusher is a free, open-source Windows VST3 plugin from **Dead Channel Audio** (
 
 - **HumpCrusher:** The Mech and Tube waveshapers, resonant low-pass filter, compressor and supporting DSP utilities originate from the [HumpCrusher project by elDoof and its contributors](https://github.com/elDoof/HumpCrusher). This code is licensed under the **GNU Affero General Public License version 3 (AGPLv3)**. Crusher incorporates these components in a different plugin engine and signal chain; changes were made for the Crusher integration on **20 November 2026**. Copyright notices and upstream attribution must be preserved.
 - **Template / original Crusher development:** The interface framework, preset workflow, 32-step sequencer and 17 distortion types derive from the supplied Afterglow/Dusk template, developed as part of the Dead Channel Audio plugin projects.
-- **Artwork:** Thanks to **Artvera** for the original logo artwork where used. The separately supplied temporary `logo.svg` is a simple replacement placeholder, not Artvera artwork. Before public release, ensure permission to redistribute any third-party artwork included in your `Resources` folder.
+- **Artwork:** Thanks to **Artvera** for the original logo artwork where used. Before public release, ensure permission to redistribute any third-party artwork included in your `Resources` folder.
 - **JUCE:** The plugin uses the [JUCE framework](https://juce.com/), supplied separately as a build dependency. Respect JUCE's applicable licence conditions when distributing the plugin.
 
 **Crusher's combined source and binary are intended for distribution under GNU AGPLv3.** The full licence text is in the root `LICENSE` file; `LICENSE-HumpCrusher-AGPL-3.0.txt` retains an additional copy for clarity about the upstream DSP. Crusher is provided **without warranty**, to the extent permitted by applicable law. Users may study, modify and redistribute AGPL-covered code under that licence, including commercially.

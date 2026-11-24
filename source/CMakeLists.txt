@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(Crusher VERSION 1.45.0 LANGUAGES C CXX)
+project(Crusher VERSION 1.45.2 LANGUAGES C CXX)
 
 set(JUCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../../_Tools/JUCE/_9.0.4")
 if(NOT EXISTS "${JUCE_DIR}/CMakeLists.txt")
@@ -8,7 +8,7 @@ endif()
 add_subdirectory("${JUCE_DIR}" "${CMAKE_BINARY_DIR}/JUCE")
 
 juce_add_plugin(Crusher
-    VERSION 1.45.0
+    VERSION 1.45.2
     COMPANY_NAME "sl23"
     BUNDLE_ID "com.sl23.crusher"
     IS_SYNTH FALSE
@@ -24,10 +24,10 @@ juce_add_plugin(Crusher
     VST3_CATEGORIES Fx Distortion
     PRODUCT_NAME "Crusher")
 
-# The user owns Resources: the artwork is optional and never packaged in
-# development ZIPs. When provided, embed it so a portable VST3 needs no
-# external image and swapping the jpg only requires rebuilding Crusher.
-set(CRUSHER_RESOURCE_FILES "${CMAKE_CURRENT_LIST_DIR}/../Resources/logo.svg")
+# The user owns Resources, which is never packaged in development ZIPs.
+# Embed the required PNG logo and optional JPEG background so the portable
+# VST3 needs no external artwork. Rebuild after replacing either image.
+set(CRUSHER_RESOURCE_FILES "${CMAKE_CURRENT_LIST_DIR}/../Resources/logo.png")
 if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../Resources/crusher_background.jpg")
     list(APPEND CRUSHER_RESOURCE_FILES
         "${CMAKE_CURRENT_LIST_DIR}/../Resources/crusher_background.jpg")

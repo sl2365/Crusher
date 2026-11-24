@@ -25,7 +25,7 @@ set "BUNDLE_BINARY=%BUILD_DIR%\Crusher_artefacts\Release\VST3\Crusher.vst3\Conte
 set "FINAL_PLUGIN=%DIST_DIR%\Crusher.vst3"
 
 echo.
-echo Crusher 64-bit VST3 - v1.45.0 Build
+echo Crusher 64-bit VST3 - v1.45.2 Build
 echo ======================================
 echo.
 
@@ -47,7 +47,7 @@ for %%F in (CMakeLists.txt PluginProcessor.cpp PluginProcessor.h PluginEditor.cp
 for %%F in (Compressor.h Distortion.h EnvelopeFollower.h Filter.h MathUtils.h ParamRamp.h) do (
     if not exist "%SOURCE_DIR%\HumpDSP\%%F" goto :missing_source
 )
-if not exist "%PROJECT_ROOT%Resources\logo.svg" goto :missing_logo
+if not exist "%PROJECT_ROOT%Resources\logo.png" goto :missing_logo
 echo       PASS
 echo.
 echo [2/4] Configuring Visual Studio Community 2026 x64...
@@ -96,7 +96,7 @@ goto :failed
 echo FAIL: Required source file missing from %SOURCE_DIR%
 goto :failed
 :missing_logo
-echo FAIL: Required logo missing: %PROJECT_ROOT%Resources\logo.svg
+echo FAIL: Required logo missing: %PROJECT_ROOT%Resources\logo.png
 goto :failed
 :configure_failed
 echo FAIL: Configuration failed.
