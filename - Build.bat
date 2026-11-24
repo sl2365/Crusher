@@ -25,7 +25,7 @@ set "BUNDLE_BINARY=%BUILD_DIR%\Crusher_artefacts\Release\VST3\Crusher.vst3\Conte
 set "FINAL_PLUGIN=%DIST_DIR%\Crusher.vst3"
 
 echo.
-echo Crusher 64-bit VST3 - v1.44.1 Build
+echo Crusher 64-bit VST3 - v1.45.0 Build
 echo ======================================
 echo.
 

@@ -1,5 +1,10 @@
 # Crusher Changelog
 
+## v1.45.0 — Sampler distortion (2026-11-24)
+
+- Added Sampler as type 24 (stored index 23), with original vintage converter aperture, analogue loading, DAC code mismatch and reconstruction modelling. Five new controls MODEL, RATE, BITS, COLOUR and PUNCH, with shared DRIVE/OUTPUT; new targets 145–149. Existing IDs and DSP retained.
+- MODEL shows nearest morph family, RATE shows converter clock, BITS shows effective interpolated resolution. No synthetic noise. Red README release badge. Resources excluded. Windows VST3 and listening tests pending.
+
 ## v1.44.1 — Amp CAB alignment (2026-11-24)
 
 - Moved the Amp CAB label and dropdown 11 design pixels right, centring them beneath DRIVE and SOFT CLIP (within half a pixel). Sizes, vertical positions, other controls, DSP, parameter IDs and sequencer are unchanged.

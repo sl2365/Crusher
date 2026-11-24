@@ -257,6 +257,11 @@ private:
     Dial* cascadeEmphasisDial = nullptr;
     Dial* cascadeBiasDial = nullptr;
     Dial* cascadePunchDial = nullptr;
+    Dial* samplerModelDial = nullptr;
+    Dial* samplerRateDial = nullptr;
+    Dial* samplerBitsDial = nullptr;
+    Dial* samplerColourDial = nullptr;
+    Dial* samplerPunchDial = nullptr;
     Dial* loFiRateDial = nullptr;
     Dial* loFiBitsDial = nullptr;
     Dial* loFiClipDial = nullptr;

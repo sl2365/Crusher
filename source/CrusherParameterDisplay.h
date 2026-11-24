@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <string_view>
+#include "CrusherSampler.h"
 
 namespace crusher::display
 {
@@ -13,7 +14,7 @@ enum class Kind
 {
     percent, filterCutoff, filterQ, codecMode, codecRate, codecBits,
     loFiRate, loFiBits, diodeInputHP, diodeEnv, diodeOutputHP,
-    diodeOutputLP, freshFreq, razorFreq, fuzzTone, crackleDensity, cascadeStages
+    diodeOutputLP, freshFreq, razorFreq, fuzzTone, crackleDensity, cascadeStages, samplerModel, samplerRate, samplerBits
 };
 
 constexpr Kind kindFor(std::string_view id) noexcept
@@ -35,6 +36,9 @@ constexpr Kind kindFor(std::string_view id) noexcept
          : id == "fuzzTone"       ? K::fuzzTone
          : id == "crackleDensity" ? K::crackleDensity
          : id == "cascadeStages" ? K::cascadeStages
+         : id == "samplerModel" ? K::samplerModel
+         : id == "samplerRate" ? K::samplerRate
+         : id == "samplerBits" ? K::samplerBits
          : K::percent;
 }
 
@@ -44,7 +48,7 @@ constexpr bool isFrequency(Kind k) noexcept
     return k == K::filterCutoff || k == K::codecRate || k == K::loFiRate
         || k == K::diodeInputHP || k == K::diodeOutputHP
         || k == K::diodeOutputLP || k == K::freshFreq
-        || k == K::razorFreq || k == K::fuzzTone;
+        || k == K::razorFreq || k == K::fuzzTone || k == K::samplerRate;
 }
 
 inline double toPhysical(Kind kind, double percent, double sampleRate) noexcept
@@ -63,6 +67,9 @@ inline double toPhysical(Kind kind, double percent, double sampleRate) noexcept
             return std::clamp(shaped * 15920.0 + 80.0, 80.0, 16000.0);
         }
         case K::filterQ:       return 1.0 + 6.0 * p;
+        case K::samplerModel:  return std::round(5.0 * p);
+        case K::samplerRate:   return crusher::sampler::rateHz(p, sampleRate);
+        case K::samplerBits:   return 4.0 + 12.0 * p;
         case K::codecMode:     return static_cast<double>(std::min(4, static_cast<int>(5.0 * p)));
         case K::codecRate:     return sr * std::pow(800.0 / sr, p);
         case K::codecBits:     return static_cast<double>(std::clamp(
@@ -103,6 +110,9 @@ inline double toPercent(Kind kind, double physical, double sampleRate) noexcept
                 : 1.0 - std::pow(10.0, -4.0 * (physical - 80.0) / 15920.0);
             break;
         case K::filterQ:       p = (physical - 1.0) / 6.0; break;
+        case K::samplerModel:  p = std::clamp(std::round(physical), 0.0, 5.0) / 5.0; break;
+        case K::samplerRate:   { const double hi = crusher::sampler::maximumRate(sampleRate); p = hi > 4000.0 ? logPosition(hi, 4000.0) : 0.0; break; }
+        case K::samplerBits:   p = (physical - 4.0) / 12.0; break;
         case K::codecMode:     p = (std::clamp(std::lround(physical), 0L, 4L) + 0.5) / 5.0; break;
         case K::codecRate:     p = logPosition(sr, 800.0); break;
         case K::codecBits:     p = (physical - 2.0) / 10.0; break;

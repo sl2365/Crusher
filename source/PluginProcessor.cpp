@@ -57,6 +57,11 @@ constexpr auto cascadeVariation = "cascadeVariation";
 constexpr auto cascadeEmphasis = "cascadeEmphasis";
 constexpr auto cascadeBias = "cascadeBias";
 constexpr auto cascadePunch = "cascadePunch";
+constexpr auto samplerModel = "samplerModel";
+constexpr auto samplerRate = "samplerRate";
+constexpr auto samplerBits = "samplerBits";
+constexpr auto samplerColour = "samplerColour";
+constexpr auto samplerPunch = "samplerPunch";
 constexpr auto loFiRate = "loFiRate";
 constexpr auto loFiBits = "loFiBits";
 constexpr auto loFiClip = "loFiClip";
@@ -356,6 +361,8 @@ CrusherAudioProcessor::createParameterLayout()
                 using crusher::display::Kind;
                 const double physical = crusher::display::toPhysical(kind, value,
                     displaySampleRate.load(std::memory_order_relaxed));
+                if (kind == Kind::samplerModel)
+                    return juce::String(crusher::sampler::modelNames[static_cast<std::size_t>(physical)]);
                 if (kind == Kind::codecMode)
                 {
                     static constexpr const char* names[] =
@@ -370,7 +377,7 @@ CrusherAudioProcessor::createParameterLayout()
                     return juce::String("Q ") + juce::String(physical, 2);
                 if (kind == Kind::diodeEnv)
                     return juce::String(physical, 1) + " ms";
-                if (kind == Kind::loFiBits)
+                if (kind == Kind::loFiBits || kind == Kind::samplerBits)
                     return juce::String(physical, 1) + " bits";
                 if (kind == Kind::cascadeStages)
                     return juce::String(static_cast<int>(physical))
@@ -385,6 +392,10 @@ CrusherAudioProcessor::createParameterLayout()
             {
                 using crusher::display::Kind;
                 const auto input = text.trim();
+                if (kind == Kind::samplerModel)
+                    for (std::size_t i = 0; i < crusher::sampler::modelNames.size(); ++i)
+                        if (input.equalsIgnoreCase(crusher::sampler::modelNames[i]))
+                            return static_cast<float>(crusher::display::toPercent(kind, static_cast<double>(i), 44100.0));
                 if (kind == Kind::codecMode)
                 {
                     const juce::StringArray names
@@ -418,7 +429,7 @@ CrusherAudioProcessor::createParameterLayout()
         juce::StringArray { "Soft Clip", "Saturation", "Tube", "Rectify",
             "Crackle", "Lightning", "Amp", "Bumpy", "Asym", "Razor",
             "Pixelated", "Comb", "Stressed", "Samurai", "Fresh",
-            "Hard Clip", "Fuzz", "Hump", "Diode Clip", "Lo-Fi", "Codec", "Vocal", "Cascade" }, 6));
+            "Hard Clip", "Fuzz", "Hump", "Diode Clip", "Lo-Fi", "Codec", "Vocal", "Cascade", "Sampler" }, 6));
     // Shared wet-engine controls: stereo is the original, untouched default.
     layout.push_back(std::make_unique<APC>(
         juce::ParameterID(ParameterIds::distMode, 1), "Distortion Input Mode",
@@ -930,6 +941,20 @@ CrusherAudioProcessor::createParameterLayout()
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
             attributesFor(item.first)));
 
+    // Sampler follows Cascade: all earlier model indices and parameter IDs survive.
+    for (const auto& item : std::array<std::pair<const char*, const char*>, 5> {{
+             { ParameterIds::samplerModel, "Sampler Model" },
+             { ParameterIds::samplerRate, "Sampler Rate" },
+             { ParameterIds::samplerBits, "Sampler Bits" },
+             { ParameterIds::samplerColour, "Sampler Colour" },
+             { ParameterIds::samplerPunch, "Sampler Punch" } }})
+        layout.push_back(std::make_unique<APF>(
+            juce::ParameterID(item.first, 1), item.second,
+            juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), (item.first == ParameterIds::samplerModel ? 0.0f :
+             item.first == ParameterIds::samplerRate ? 35.0f :
+             item.first == ParameterIds::samplerBits ? 67.0f : 50.0f),
+            attributesFor(item.first)));
+
     return { layout.begin(), layout.end() };
 }
 
@@ -985,6 +1010,11 @@ void CrusherAudioProcessor::bindParameterPointers()
     raw.cascadeEmphasis = bind(ParameterIds::cascadeEmphasis);
     raw.cascadeBias = bind(ParameterIds::cascadeBias);
     raw.cascadePunch = bind(ParameterIds::cascadePunch);
+    raw.samplerModel = bind(ParameterIds::samplerModel);
+    raw.samplerRate = bind(ParameterIds::samplerRate);
+    raw.samplerBits = bind(ParameterIds::samplerBits);
+    raw.samplerColour = bind(ParameterIds::samplerColour);
+    raw.samplerPunch = bind(ParameterIds::samplerPunch);
     raw.loFiRate = bind(ParameterIds::loFiRate);
     raw.loFiBits = bind(ParameterIds::loFiBits);
     raw.loFiClip = bind(ParameterIds::loFiClip);
@@ -1347,6 +1377,7 @@ void CrusherAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock
     codecProcessor.prepare(currentSampleRate);
     vocalProcessor.prepare(currentSampleRate);
     cascadeProcessor.prepare(currentSampleRate);
+    samplerProcessor.prepare(currentSampleRate);
     lightningProcessor.prepare(currentSampleRate);
     pixelatedProcessor.prepare(currentSampleRate);
     razorProcessor.prepare(currentSampleRate);
@@ -1434,6 +1465,11 @@ void CrusherAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock
     resetSmoother(cascadeEmphasisValue, load(raw.cascadeEmphasis) * 0.01f);
     resetSmoother(cascadeBiasValue, load(raw.cascadeBias) * 0.01f);
     resetSmoother(cascadePunchValue, load(raw.cascadePunch) * 0.01f);
+    resetSmoother(samplerModelValue, load(raw.samplerModel) * 0.01f);
+    resetSmoother(samplerRateValue, load(raw.samplerRate) * 0.01f);
+    resetSmoother(samplerBitsValue, load(raw.samplerBits) * 0.01f);
+    resetSmoother(samplerColourValue, load(raw.samplerColour) * 0.01f);
+    resetSmoother(samplerPunchValue, load(raw.samplerPunch) * 0.01f);
     resetSmoother(loFiRateValue, load(raw.loFiRate) * 0.01f);
     resetSmoother(loFiBitsValue, load(raw.loFiBits) * 0.01f);
     resetSmoother(loFiClipValue, load(raw.loFiClip) * 0.01f);
@@ -1832,6 +1868,8 @@ void CrusherAudioProcessor::processBlock(
         || (transitioningModels && previousDistortionType == 21));
     const bool cascadeInUse = distortionMayRun && (currentDistortionType == 22
         || (transitioningModels && previousDistortionType == 22));
+    const bool samplerInUse = distortionMayRun && (currentDistortionType == 23
+        || (transitioningModels && previousDistortionType == 23));
     const bool codecInUse = distortionMayRun && (currentDistortionType == 20
         || (transitioningModels && previousDistortionType == 20));
     const bool loFiInUse = distortionMayRun && (currentDistortionType == 19
@@ -1934,6 +1972,22 @@ void CrusherAudioProcessor::processBlock(
         sequenced(crusher::sequencer::cascadeBiasTargetChoice, raw.cascadeBias) * 0.01f));
     updateCascadeControl(cascadePunchValue, juce::jlimit(0.0f, 1.0f,
         sequenced(crusher::sequencer::cascadePunchTargetChoice, raw.cascadePunch) * 0.01f));
+    const auto updateSamplerControl = [samplerInUse](LinearSmoother& smoother,
+                                                     float target)
+    {
+        if (samplerInUse) smoother.setTargetValue(target);
+        else smoother.setCurrentAndTargetValue(target);
+    };
+    updateSamplerControl(samplerModelValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::samplerModelTargetChoice, raw.samplerModel) * 0.01f));
+    updateSamplerControl(samplerRateValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::samplerRateTargetChoice, raw.samplerRate) * 0.01f));
+    updateSamplerControl(samplerBitsValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::samplerBitsTargetChoice, raw.samplerBits) * 0.01f));
+    updateSamplerControl(samplerColourValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::samplerColourTargetChoice, raw.samplerColour) * 0.01f));
+    updateSamplerControl(samplerPunchValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::samplerPunchTargetChoice, raw.samplerPunch) * 0.01f));
 
     const auto updateLoFiControl = [loFiInUse](LinearSmoother& smoother,
                                                float target) noexcept
@@ -2471,6 +2525,16 @@ void CrusherAudioProcessor::processBlock(
                 controls.bias = cascadeBiasValue.getNextValue();
                 controls.punch = cascadePunchValue.getNextValue();
                 cascadeProcessor.setControls(controls);
+            }
+            if (samplerInUse)
+            {
+                crusher::sampler::Controls controls;
+                controls.model = samplerModelValue.getNextValue();
+                controls.rate = samplerRateValue.getNextValue();
+                controls.bits = samplerBitsValue.getNextValue();
+                controls.colour = samplerColourValue.getNextValue();
+                controls.punch = samplerPunchValue.getNextValue();
+                samplerProcessor.setControls(controls);
             }
             if (loFiInUse)
             {

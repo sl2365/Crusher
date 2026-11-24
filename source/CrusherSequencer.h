@@ -52,7 +52,7 @@ struct TargetInfo
     const char* displayName;
 };
 
-inline constexpr std::array<TargetInfo, 144> targets
+inline constexpr std::array<TargetInfo, 149> targets
 {{
     { "distOutput", "Dist Output" },
     { "mix", "Dry / Wet" },
@@ -199,6 +199,11 @@ inline constexpr std::array<TargetInfo, 144> targets
     { "cascadeEmphasis", "Cascade Emphasis" },
     { "cascadeBias", "Cascade Bias" },
     { "cascadePunch", "Cascade Punch" },
+    { "samplerModel", "Sampler Model" },
+    { "samplerRate", "Sampler Rate" },
+    { "samplerBits", "Sampler Bits" },
+    { "samplerColour", "Sampler Colour" },
+    { "samplerPunch", "Sampler Punch" },
 }};
 
 inline constexpr int distOutputTargetChoice = 1;
@@ -349,8 +354,14 @@ inline constexpr int cascadeVariationTargetChoice = 141;
 inline constexpr int cascadeEmphasisTargetChoice = 142;
 inline constexpr int cascadeBiasTargetChoice = 143;
 inline constexpr int cascadePunchTargetChoice = 144;
-static_assert(cascadePunchTargetChoice == static_cast<int>(targets.size()),
-              "Cascade target IDs must match the target table");
+static_assert(cascadePunchTargetChoice == 144);
+inline constexpr int samplerModelTargetChoice = 145;
+inline constexpr int samplerRateTargetChoice = 146;
+inline constexpr int samplerBitsTargetChoice = 147;
+inline constexpr int samplerColourTargetChoice = 148;
+inline constexpr int samplerPunchTargetChoice = 149;
+static_assert(samplerPunchTargetChoice == static_cast<int>(targets.size()),
+              "Sampler target IDs must match the target table");
 
 inline int targetChoiceForParameter(const juce::String& parameterId)
 {
