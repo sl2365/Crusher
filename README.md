@@ -2,7 +2,7 @@
 
 <div align="center">
 
-[![Release](https://img.shields.io/github/v/release/sl2365/Crusher?style=for-the-badge-square&logo=github&logoColor=white&color=orange)](https://github.com/sl2365/Crusher/releases/latest/download/Crusher.rar)
+[![Release](https://img.shields.io/github/v/release/sl2365/Crusher?style=for-the-badge-square&logo=github&logoColor=white&color=red)](https://github.com/sl2365/Crusher/releases/latest/download/Crusher.rar)
 [![Release Date](https://img.shields.io/github/release-date/sl2365/Crusher?style=for-the-badge-square&logo=github&logoColor=white&color=yellow)](https://github.com/sl2365/Crusher/releases)
 [![Latest Asset Downloads](https://img.shields.io/github/downloads/sl2365/Crusher/latest/Crusher.rar?style=for-the-badge-square&logo=github&logoColor=white&label=downloads-latest&displayAssetName=false&color=blue)](https://github.com/sl2365/Crusher/releases/latest)
 [![Total Downloads](https://img.shields.io/github/downloads/sl2365/Crusher/total?style=for-the-badge-square&logo=github&logoColor=white&label=downloads-total&color=blue)](https://github.com/sl2365/Crusher/releases)
