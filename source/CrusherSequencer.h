@@ -52,7 +52,7 @@ struct TargetInfo
     const char* displayName;
 };
 
-inline constexpr std::array<TargetInfo, 139> targets
+inline constexpr std::array<TargetInfo, 144> targets
 {{
     { "distOutput", "Dist Output" },
     { "mix", "Dry / Wet" },
@@ -194,6 +194,11 @@ inline constexpr std::array<TargetInfo, 139> targets
     { "vocalPresence", "Vocal Presence" },
     { "vocalBite", "Vocal Bite" },
     { "vocalSmooth", "Vocal Smooth" },
+    { "cascadeStages", "Cascade Stages" },
+    { "cascadeVariation", "Cascade Variation" },
+    { "cascadeEmphasis", "Cascade Emphasis" },
+    { "cascadeBias", "Cascade Bias" },
+    { "cascadePunch", "Cascade Punch" },
 }};
 
 inline constexpr int distOutputTargetChoice = 1;
@@ -337,8 +342,15 @@ inline constexpr int vocalBodyTargetChoice = 136;
 inline constexpr int vocalPresenceTargetChoice = 137;
 inline constexpr int vocalBiteTargetChoice = 138;
 inline constexpr int vocalSmoothTargetChoice = 139;
-static_assert(vocalSmoothTargetChoice == static_cast<int>(targets.size()),
-              "Vocal target IDs must match the target table");
+static_assert(vocalSmoothTargetChoice == 139,
+              "Existing Vocal target IDs must not change");
+inline constexpr int cascadeStagesTargetChoice = 140;
+inline constexpr int cascadeVariationTargetChoice = 141;
+inline constexpr int cascadeEmphasisTargetChoice = 142;
+inline constexpr int cascadeBiasTargetChoice = 143;
+inline constexpr int cascadePunchTargetChoice = 144;
+static_assert(cascadePunchTargetChoice == static_cast<int>(targets.size()),
+              "Cascade target IDs must match the target table");
 
 inline int targetChoiceForParameter(const juce::String& parameterId)
 {

@@ -151,6 +151,7 @@ float CrusherAudioProcessor::processDistortionType(
         case 19: return loFiProcessor.process(sample, amount, channel);
         case 20: return codecProcessor.process(sample, amount, channel);
         case 21: return vocalProcessor.process(sample, amount, channel);
+        case 22: return cascadeProcessor.process(sample, amount, channel);
         default: break;
     }
 
@@ -165,6 +166,7 @@ void CrusherAudioProcessor::resetDistortionState() noexcept
     loFiProcessor.reset();
     codecProcessor.reset();
     vocalProcessor.reset();
+    cascadeProcessor.reset();
     lightningProcessor.reset();
     ampLowpassState.fill(0.0f);
     ampPreviousInput.fill(0.0f);

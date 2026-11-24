@@ -14,6 +14,7 @@
 #include "CrusherCrackle.h"
 #include "CrusherCodec.h"
 #include "CrusherVocal.h"
+#include "CrusherCascade.h"
 #include "CrusherDiodeClip.h"
 #include "CrusherFresh.h"
 #include "CrusherFuzz.h"
@@ -95,7 +96,7 @@ public:
 private:
     static constexpr int stateSchemaVersion = 3;
     static constexpr int channelCount = 2;
-    static constexpr int distortionTypeCount = 22;
+    static constexpr int distortionTypeCount = 23;
     static constexpr int envelopeSlotCount = 8;
     static constexpr int humpDistortionType = 17;
 
@@ -142,6 +143,11 @@ private:
         std::atomic<float>* vocalPresence = nullptr;
         std::atomic<float>* vocalBite = nullptr;
         std::atomic<float>* vocalSmooth = nullptr;
+        std::atomic<float>* cascadeStages = nullptr;
+        std::atomic<float>* cascadeVariation = nullptr;
+        std::atomic<float>* cascadeEmphasis = nullptr;
+        std::atomic<float>* cascadeBias = nullptr;
+        std::atomic<float>* cascadePunch = nullptr;
         std::atomic<float>* loFiRate = nullptr;
         std::atomic<float>* loFiBits = nullptr;
         std::atomic<float>* loFiClip = nullptr;
@@ -387,6 +393,12 @@ private:
     LinearSmoother vocalPresenceValue;
     LinearSmoother vocalBiteValue;
     LinearSmoother vocalSmoothValue;
+    crusher::cascade::Processor cascadeProcessor;
+    LinearSmoother cascadeStagesValue;
+    LinearSmoother cascadeVariationValue;
+    LinearSmoother cascadeEmphasisValue;
+    LinearSmoother cascadeBiasValue;
+    LinearSmoother cascadePunchValue;
     crusher::lofi::Processor loFiProcessor;
     LinearSmoother loFiRateValue;
     LinearSmoother loFiBitsValue;

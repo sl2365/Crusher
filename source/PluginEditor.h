@@ -252,6 +252,11 @@ private:
     Dial* vocalPresenceDial = nullptr;
     Dial* vocalBiteDial = nullptr;
     Dial* vocalSmoothDial = nullptr;
+    Dial* cascadeStagesDial = nullptr;
+    Dial* cascadeVariationDial = nullptr;
+    Dial* cascadeEmphasisDial = nullptr;
+    Dial* cascadeBiasDial = nullptr;
+    Dial* cascadePunchDial = nullptr;
     Dial* loFiRateDial = nullptr;
     Dial* loFiBitsDial = nullptr;
     Dial* loFiClipDial = nullptr;

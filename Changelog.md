@@ -1,5 +1,22 @@
 # Crusher Changelog
 
+## v1.44.1 — Amp CAB alignment (2026-11-24)
+
+- Moved the Amp CAB label and dropdown 11 design pixels right, centring them beneath DRIVE and SOFT CLIP (within half a pixel). Sizes, vertical positions, other controls, DSP, parameter IDs and sequencer are unchanged.
+
+## v1.44.0 — Cascade selection/index correction (2026-11-24)
+
+- Fixed the distortion selection attachment's obsolete hard-coded 22-item limit. Selecting **Cascade** (menu ID 23, stored index 22) now correctly remains on Cascade instead of reverting to Vocal.
+- The selection boundary is now obtained from the existing `distortionType` host parameter, with debug-time checks against both the menu and its description table. This avoids repeating the same last-model indexing mistake when new types are appended.
+- Updated the displayed, CMake, build-script and README version to **1.44.0**, keeping the established plugin identity, state schema, and all parameter/type IDs intact. All 23 DSP engines, processing, presets, sequencer targets, and Resources are unchanged. Windows VST3 compilation and PHI verification remain pending.
+
+## v1.43.5 — Cascade multi-stage distortion (2026-11-24)
+
+- Added **Cascade** as distortion type 23 (internal index 22), appending its choice after the existing 22 models without renumbering them. Its independently implemented `CrusherCascade.h` combines 1–16 smoothly interpolated saturation stages, deterministic mixed transfer curves, pre-stage frequency emphasis, asymmetric harmonic variation, and dry-transient restoration aimed at drums, vocals and mixes. All control paths are finite and generated noise is absent. No host memory allocation occurs in audio processing, and only the selected/outgoing model is processed; higher stage counts use more CPU.
+- Added five saved, automatable and sequencer/ENV-assignable controls **STAGES**, **VARIATION**, **EMPH**, **BIAS**, **PUNCH**, plus existing shared DRIVE and OUTPUT. Appended sequencer choices 140–144, preserving existing IDs 1–139, the 32 sequencer steps and 16 target slots, and eight ENV slots. STAGES shows its physical 1–16 count in parameter readouts. The alphabetical distortion dropdown, context-specific 81px knob grid, descriptions and tooltip wiring have been extended; previous 22 model DSP files are unchanged.
+- Standalone C++17 DSP tests, sanitizer tests, control-impact tests and structural/source-integrity validation are performed locally. The new model does not include oversampling; very high drive and sharp clipping can still alias. Full Windows JUCE VST3 compilation, host GUI tests, listening and measured CPU benchmarking are pending. Source ZIP excludes Resources.
+
+
 ## v1.43.4 — Vocal control rebalancing (2026-11-23)
 
 - Improved the perceptible range of Vocal BODY, PRESENCE, BITE and SMOOTH on vocals, snares, drums and mixed SV-Drummer-style buses. CHARACTER and DRIVE retain their transfer curves, meaning and range. BODY now spans ±15 dB and dynamically covers more low-mid content away from centre; PRESENCE adds post-saturation adjustment; BITE varies the high-band crossover and shaped-signal blend; SMOOTH adds stronger level-responsive taming and progressive post filtering. No new parameters, noise, look-ahead, latency or audio-thread allocations. Control coefficient lookup tables are computed during prepare().

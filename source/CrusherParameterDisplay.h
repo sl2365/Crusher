@@ -13,7 +13,7 @@ enum class Kind
 {
     percent, filterCutoff, filterQ, codecMode, codecRate, codecBits,
     loFiRate, loFiBits, diodeInputHP, diodeEnv, diodeOutputHP,
-    diodeOutputLP, freshFreq, razorFreq, fuzzTone, crackleDensity
+    diodeOutputLP, freshFreq, razorFreq, fuzzTone, crackleDensity, cascadeStages
 };
 
 constexpr Kind kindFor(std::string_view id) noexcept
@@ -34,6 +34,7 @@ constexpr Kind kindFor(std::string_view id) noexcept
          : id == "razorFreq"      ? K::razorFreq
          : id == "fuzzTone"       ? K::fuzzTone
          : id == "crackleDensity" ? K::crackleDensity
+         : id == "cascadeStages" ? K::cascadeStages
          : K::percent;
 }
 
@@ -79,6 +80,8 @@ inline double toPhysical(Kind kind, double percent, double sampleRate) noexcept
         case K::fuzzTone:      return p <= 0.5 ? 800.0 + 8800.0 * p
                                             : 5200.0 + 15600.0 * (p - 0.5);
         case K::crackleDensity:return 0.20 + 1.60 * p;
+        case K::cascadeStages: return static_cast<double>(std::clamp(
+                                         static_cast<int>(std::lround(1.0 + 15.0 * p)), 1, 16));
         default:               return percent;
     }
 }
@@ -116,6 +119,7 @@ inline double toPercent(Kind kind, double physical, double sampleRate) noexcept
         case K::fuzzTone:      p = physical <= 5200.0 ? (physical - 800.0) / 8800.0
                                                 : 0.5 + (physical - 5200.0) / 15600.0; break;
         case K::crackleDensity:p = (physical - 0.20) / 1.60; break;
+        case K::cascadeStages: p = (std::clamp(std::lround(physical), 1L, 16L) - 1.0) / 15.0; break;
         default:               return physical;
     }
     return 100.0 * std::clamp(p, 0.0, 1.0);

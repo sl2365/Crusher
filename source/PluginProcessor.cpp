@@ -52,6 +52,11 @@ constexpr auto vocalBody = "vocalBody";
 constexpr auto vocalPresence = "vocalPresence";
 constexpr auto vocalBite = "vocalBite";
 constexpr auto vocalSmooth = "vocalSmooth";
+constexpr auto cascadeStages = "cascadeStages";
+constexpr auto cascadeVariation = "cascadeVariation";
+constexpr auto cascadeEmphasis = "cascadeEmphasis";
+constexpr auto cascadeBias = "cascadeBias";
+constexpr auto cascadePunch = "cascadePunch";
 constexpr auto loFiRate = "loFiRate";
 constexpr auto loFiBits = "loFiBits";
 constexpr auto loFiClip = "loFiClip";
@@ -367,6 +372,9 @@ CrusherAudioProcessor::createParameterLayout()
                     return juce::String(physical, 1) + " ms";
                 if (kind == Kind::loFiBits)
                     return juce::String(physical, 1) + " bits";
+                if (kind == Kind::cascadeStages)
+                    return juce::String(static_cast<int>(physical))
+                        + (physical == 1.0 ? " stage" : " stages");
                 if (kind == Kind::codecBits)
                     return juce::String(static_cast<int>(physical)) + " bits";
                 if (kind == Kind::crackleDensity)
@@ -410,7 +418,7 @@ CrusherAudioProcessor::createParameterLayout()
         juce::StringArray { "Soft Clip", "Saturation", "Tube", "Rectify",
             "Crackle", "Lightning", "Amp", "Bumpy", "Asym", "Razor",
             "Pixelated", "Comb", "Stressed", "Samurai", "Fresh",
-            "Hard Clip", "Fuzz", "Hump", "Diode Clip", "Lo-Fi", "Codec", "Vocal" }, 6));
+            "Hard Clip", "Fuzz", "Hump", "Diode Clip", "Lo-Fi", "Codec", "Vocal", "Cascade" }, 6));
     // Shared wet-engine controls: stereo is the original, untouched default.
     layout.push_back(std::make_unique<APC>(
         juce::ParameterID(ParameterIds::distMode, 1), "Distortion Input Mode",
@@ -910,6 +918,18 @@ CrusherAudioProcessor::createParameterLayout()
             juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
             attributesFor(item.first)));
 
+    // Cascade follows Vocal: all earlier model indices and parameter IDs survive.
+    for (const auto& item : std::array<std::pair<const char*, const char*>, 5> {{
+             { ParameterIds::cascadeStages, "Cascade Stages" },
+             { ParameterIds::cascadeVariation, "Cascade Variation" },
+             { ParameterIds::cascadeEmphasis, "Cascade Emphasis" },
+             { ParameterIds::cascadeBias, "Cascade Bias" },
+             { ParameterIds::cascadePunch, "Cascade Punch" } }})
+        layout.push_back(std::make_unique<APF>(
+            juce::ParameterID(item.first, 1), item.second,
+            juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
+            attributesFor(item.first)));
+
     return { layout.begin(), layout.end() };
 }
 
@@ -960,6 +980,11 @@ void CrusherAudioProcessor::bindParameterPointers()
     raw.vocalPresence = bind(ParameterIds::vocalPresence);
     raw.vocalBite = bind(ParameterIds::vocalBite);
     raw.vocalSmooth = bind(ParameterIds::vocalSmooth);
+    raw.cascadeStages = bind(ParameterIds::cascadeStages);
+    raw.cascadeVariation = bind(ParameterIds::cascadeVariation);
+    raw.cascadeEmphasis = bind(ParameterIds::cascadeEmphasis);
+    raw.cascadeBias = bind(ParameterIds::cascadeBias);
+    raw.cascadePunch = bind(ParameterIds::cascadePunch);
     raw.loFiRate = bind(ParameterIds::loFiRate);
     raw.loFiBits = bind(ParameterIds::loFiBits);
     raw.loFiClip = bind(ParameterIds::loFiClip);
@@ -1321,6 +1346,7 @@ void CrusherAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock
     loFiProcessor.prepare(currentSampleRate);
     codecProcessor.prepare(currentSampleRate);
     vocalProcessor.prepare(currentSampleRate);
+    cascadeProcessor.prepare(currentSampleRate);
     lightningProcessor.prepare(currentSampleRate);
     pixelatedProcessor.prepare(currentSampleRate);
     razorProcessor.prepare(currentSampleRate);
@@ -1403,6 +1429,11 @@ void CrusherAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock
     resetSmoother(vocalPresenceValue, load(raw.vocalPresence) * 0.01f);
     resetSmoother(vocalBiteValue, load(raw.vocalBite) * 0.01f);
     resetSmoother(vocalSmoothValue, load(raw.vocalSmooth) * 0.01f);
+    resetSmoother(cascadeStagesValue, load(raw.cascadeStages) * 0.01f);
+    resetSmoother(cascadeVariationValue, load(raw.cascadeVariation) * 0.01f);
+    resetSmoother(cascadeEmphasisValue, load(raw.cascadeEmphasis) * 0.01f);
+    resetSmoother(cascadeBiasValue, load(raw.cascadeBias) * 0.01f);
+    resetSmoother(cascadePunchValue, load(raw.cascadePunch) * 0.01f);
     resetSmoother(loFiRateValue, load(raw.loFiRate) * 0.01f);
     resetSmoother(loFiBitsValue, load(raw.loFiBits) * 0.01f);
     resetSmoother(loFiClipValue, load(raw.loFiClip) * 0.01f);
@@ -1799,6 +1830,8 @@ void CrusherAudioProcessor::processBlock(
         || (transitioningModels && previousDistortionType == 10));
     const bool vocalInUse = distortionMayRun && (currentDistortionType == 21
         || (transitioningModels && previousDistortionType == 21));
+    const bool cascadeInUse = distortionMayRun && (currentDistortionType == 22
+        || (transitioningModels && previousDistortionType == 22));
     const bool codecInUse = distortionMayRun && (currentDistortionType == 20
         || (transitioningModels && previousDistortionType == 20));
     const bool loFiInUse = distortionMayRun && (currentDistortionType == 19
@@ -1884,6 +1917,23 @@ void CrusherAudioProcessor::processBlock(
         sequenced(crusher::sequencer::vocalBiteTargetChoice, raw.vocalBite) * 0.01f));
     updateVocalControl(vocalSmoothValue, juce::jlimit(0.0f, 1.0f,
         sequenced(crusher::sequencer::vocalSmoothTargetChoice, raw.vocalSmooth) * 0.01f));
+
+    const auto updateCascadeControl = [cascadeInUse](LinearSmoother& smoother,
+                                                     float target)
+    {
+        if (cascadeInUse) smoother.setTargetValue(target);
+        else smoother.setCurrentAndTargetValue(target);
+    };
+    updateCascadeControl(cascadeStagesValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::cascadeStagesTargetChoice, raw.cascadeStages) * 0.01f));
+    updateCascadeControl(cascadeVariationValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::cascadeVariationTargetChoice, raw.cascadeVariation) * 0.01f));
+    updateCascadeControl(cascadeEmphasisValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::cascadeEmphasisTargetChoice, raw.cascadeEmphasis) * 0.01f));
+    updateCascadeControl(cascadeBiasValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::cascadeBiasTargetChoice, raw.cascadeBias) * 0.01f));
+    updateCascadeControl(cascadePunchValue, juce::jlimit(0.0f, 1.0f,
+        sequenced(crusher::sequencer::cascadePunchTargetChoice, raw.cascadePunch) * 0.01f));
 
     const auto updateLoFiControl = [loFiInUse](LinearSmoother& smoother,
                                                float target) noexcept
@@ -2411,6 +2461,16 @@ void CrusherAudioProcessor::processBlock(
                 controls.bite = vocalBiteValue.getNextValue();
                 controls.smooth = vocalSmoothValue.getNextValue();
                 vocalProcessor.setControls(controls);
+            }
+            if (cascadeInUse)
+            {
+                crusher::cascade::Controls controls;
+                controls.stages = cascadeStagesValue.getNextValue();
+                controls.variation = cascadeVariationValue.getNextValue();
+                controls.emphasis = cascadeEmphasisValue.getNextValue();
+                controls.bias = cascadeBiasValue.getNextValue();
+                controls.punch = cascadePunchValue.getNextValue();
+                cascadeProcessor.setControls(controls);
             }
             if (loFiInUse)
             {
