@@ -1,5 +1,12 @@
 # Crusher Changelog
 
+## v1.46.0 — Shared interface and MIDI Learn (2026-11-26)
+
+- Ported Transform MIDI Learn vector icon, overlay outlines, armed colour and bottom-centred CC badges, message-thread mapping/notifications and portable INI storage. Added Crusher-specific visible controls including bypass and filter shape. No new host parameters or preset schema changes.
+- Added middle-click Init reset and left-only double-click saved-state reset for attached rotary/slider controls, sequencer depth knobs and EQ bands. THEME resets to 50%.
+- Unified popup menu borders with the theme red; GUI Zoom shares dropdown styling and has a section title. Theme strip fades to either endpoint. Preset, SEQ and Start/End Link active states use Transform yellow styling.
+- All 24 model DSP files unchanged; Windows VST3 compilation and PHI MIDI/visual verification pending.
+
 ## v1.45.2 — PNG logo click area (2026-11-24)
 
 - Fit the zoom-menu click area to the actual proportionally rendered PNG rectangle rather than the fixed 280 × 43 header area. Anchor the popup to its bottom-left corner at every zoom level. Transparent padding within the PNG remains part of its image bounds. Logo rendering, DSP and all other controls are unchanged.

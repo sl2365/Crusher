@@ -92,10 +92,18 @@ All five new controls are saved, automated and available to the existing sequenc
 
 ## THEME and optional background artwork
 
-- The horizontal colour strip is fixed to the same **muted distortion red (#8e414b)** used by THEME at 100%, regardless of distortion type. THEME is bipolar: **0%** shows the full background graphic, **50%** is plain charcoal (no graphic), and **100%** is solid muted distortion red. Positions between the endpoints fade continuously; double-click THEME to return to 50%.
+- The horizontal colour strip uses **muted distortion red (#8e414b)**, fully opaque at THEME 50% and fading to transparent towards either endpoint. Menu borders use that same red regardless of distortion type. THEME is bipolar: **0%** shows the full background graphic, **50%** is plain charcoal (no graphic), and **100%** is solid muted distortion red. Positions between the endpoints fade continuously; double-click THEME to return to 50%.
 - To use custom artwork, place a JPEG named **`crusher_background.jpg`** in `_Projects\Crusher\Resources` beside your existing `logo.png`, then rebuild by double-clicking `- Build.bat`. The image is optional; if missing, the plugin still builds and the left half of THEME uses plain charcoal. The selected image is embedded into the VST3 at build time, so changing the JPG requires another build.
 - The artwork appears **only in the coloured surround** behind the main effect controls and sequencer. The dark control panels remain opaque, and the gap between the two sections is never covered. One image coordinate system spans both sections; a roughly **910 × 470** pixel artwork suits the reference layout (other image sizes are proportionally cropped to fill).
 - The development source ZIP deliberately excludes the entire `Resources` folder. Keep your own logo, background and screenshots in place. The required logo must be named `logo.png`; the background JPEG is optional.
+
+## Control resets and MIDI Learn
+
+- Middle-click a rotary or slider (including individual sequencer target depths) to restore its factory Init value. Left-button double-click restores the current saved preset/state value, falling back to Init if unavailable. THEME is a GUI-only setting; both gestures restore 50%. On an EQ point, the gestures restore that band's frequency, gain, Q and shape together.
+- Click the vector MIDI socket button immediately left of Randomise to show MIDI Learn. Click a blue outlined control and move a MIDI CC controller; the armed outline is yellow and the assigned CC number appears on a bottom-centred blue badge. Right-click an outlined control to remove its assignment. Click the MIDI button again to leave Learn mode. MIDI CC assignments continue working with the interface closed; the host must route MIDI CCs into Crusher.
+- Learn supports visible attached parameter knobs, sliders, dropdowns, section power/bypass buttons, shared stereo/mono and filter-shape selectors, and sequencer controls and target depths. UI-only buttons, sequencer grid cells, the multi-axis EQ graph and hidden context-menu-only parameters are not separate overlay targets.
+- CCs 0–119 are supported across all MIDI channels; one CC maps to one parameter and one parameter to one CC. Assignment replaces an existing conflicting mapping. Mappings are saved in `Crusher_Data/Settings/MidiLearn.ini` separately from presets, and are loaded when a plugin instance is created.
+- Click the logo to open the **GUI Zoom** menu (75–300%). Preset, SEQ and Start/End Link use the common yellow active styling.
 
 ## Sequencer and presets
 
@@ -109,7 +117,7 @@ All five new controls are saved, automated and available to the existing sequenc
 ## Identity and storage
 
 - Project/output: `Crusher`, VST3 binary `Crusher.vst3`
-- Version: `1.45.2`; manufacturer `sl23`; plugin code `cru1`; bundle ID `com.sl23.crusher`
+- Version: `1.46.0`; manufacturer `sl23`; plugin code `cru1`; bundle ID `com.sl23.crusher`
 - State root: `CrusherParameters`, schema version **3**
 - Presets: `.crusherpreset`; sequences: `.crusherseq` (`CrusherSequence` state root)
 - Portable data: **`Crusher_Data`** beside the installed VST3 when needed; the build does not create this directory.

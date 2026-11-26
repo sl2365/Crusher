@@ -26,9 +26,16 @@ private:
     {
     public:
         std::function<bool()> onSavedStateReset;
+        std::function<void()> onInitReset;
         std::function<void(juce::Point<int>)> onContextMenu;
         void mouseDown(const juce::MouseEvent& event) override
         {
+            middleResetGesture = event.mods.isMiddleButtonDown();
+            if (middleResetGesture)
+            {
+                if (isEnabled() && onInitReset != nullptr) onInitReset();
+                return;
+            }
             if (event.mods.isPopupMenu() && onContextMenu != nullptr)
             {
                 onContextMenu(event.getScreenPosition());
@@ -51,16 +58,42 @@ private:
                 return centreDetent;
             return attemptedValue;
         }
+        void mouseDrag(const juce::MouseEvent& event) override
+        {
+            if (! middleResetGesture)
+                juce::Slider::mouseDrag(event);
+        }
+        void mouseUp(const juce::MouseEvent& event) override
+        {
+            if (middleResetGesture)
+            {
+                middleResetGesture = false;
+                return;
+            }
+            juce::Slider::mouseUp(event);
+        }
         void mouseDoubleClick(const juce::MouseEvent& event) override
         {
-            if (onSavedStateReset != nullptr && onSavedStateReset())
+            if (!event.mods.isLeftButtonDown() || middleResetGesture || event.mods.isMiddleButtonDown() || event.mods.isRightButtonDown())
                 return;
+            if (onSavedStateReset != nullptr)
+            {
+                if (onSavedStateReset())
+                    return;
+                if (onInitReset != nullptr)
+                {
+                    onInitReset();
+                    return;
+                }
+            }
             juce::Slider::mouseDoubleClick(event);
         }
+
     private:
         double centreDetent = 0.0;
         double detentRadius = 0.0;
         bool centreDetentEnabled = false;
+        bool middleResetGesture = false;
     };
 
     class SteppedComboBox final : public juce::ComboBox
@@ -157,6 +190,7 @@ private:
     };
 
     class SequencerPanel;
+    class MidiLearnOverlay;
     class EQGraph;
     class EnvMeter;
     class FilterShapeButton final : public juce::Button
@@ -174,7 +208,6 @@ private:
         explicit LookAndFeel(bool compactPopupFont = false);
         juce::Label* createSliderTextBox(juce::Slider&) override;
         juce::Font getPopupMenuFont() override;
-        void setZoomPopupScale(float scale) noexcept { zoomPopupScale = scale; }
         juce::Font getComboBoxFont(juce::ComboBox&) override;
         void drawRotarySlider(juce::Graphics&, int, int, int, int,
                               float, float, float, juce::Slider&) override;
@@ -202,14 +235,12 @@ private:
             return popupBorderColour;
         }
     private:
-        juce::Colour popupBorderColour { 0xff1479b8 };
+        juce::Colour popupBorderColour { 0xff8e414b };
         bool useCompactPopupFont = false;
-        float zoomPopupScale = 1.0f;
     };
 
     CrusherAudioProcessor& processor;
     LookAndFeel lookAndFeel;
-    LookAndFeel zoomMenuLookAndFeel;
     juce::Component content;
     std::vector<std::unique_ptr<Dial>> dials;
     Dial* driveDial = nullptr;
@@ -399,6 +430,9 @@ private:
     juce::ToggleButton presetSaveButton;
     juce::ToggleButton presetSaveAsButton;
     juce::ToggleButton presetOpenFolderButton;
+    juce::ToggleButton midiLearnButton;
+    std::unique_ptr<MidiLearnOverlay> midiLearnOverlay;
+    void setMidiLearnOpen(bool);
     juce::ToggleButton randomButton { "!!!" };
     juce::ToggleButton sequencerButton { "SEQ" };
     std::unique_ptr<SequencerPanel> sequencerPanel;

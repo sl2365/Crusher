@@ -33,13 +33,17 @@
 #include "CrusherTube.h"
 #include "CrusherGraphicEQ.h"
 #include <array>
+#include <atomic>
+#include <cstdint>
 #include <optional>
 
-class CrusherAudioProcessor final : public juce::AudioProcessor
+class CrusherAudioProcessor final : public juce::AudioProcessor, private juce::Timer
 {
 public:
     CrusherAudioProcessor();
-    ~CrusherAudioProcessor() override = default;
+    ~CrusherAudioProcessor() override;
+    using juce::AudioProcessor::processBlockBypassed;
+    void processBlockBypassed(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
@@ -66,6 +70,13 @@ public:
     void getStateInformation(juce::MemoryBlock&) override;
     void setStateInformation(const void*, int) override;
 
+    // MIDI learn is independent of preset state. All mapping edits and host
+    // notifications run on the message thread; audio only captures CC bytes.
+    void armMidiLearn(const juce::String& id);
+    void cancelMidiLearn();
+    void clearMidiLearn(const juce::String& id);
+    int getMidiLearnCC(const juce::String& id) const;
+    juce::String getArmedMidiLearn() const { return midiArmedId; }
     // Constructed before APVTS; display callbacks use the rate of this instance.
     std::atomic<double> displaySampleRate { 44100.0 };
     juce::AudioProcessorValueTreeState parameters;
@@ -95,6 +106,21 @@ public:
     { return envelopeMeter.load(std::memory_order_relaxed); }
 
 private:
+    static constexpr int midiCCCount = 120; // Channel-mode CCs 120–127 are reserved.
+    std::array<std::atomic<std::uint64_t>, midiCCCount> midiIncoming {};
+    std::array<std::uint64_t, midiCCCount> midiConsumed {};
+    std::array<juce::String, midiCCCount> midiMapping {};
+    std::atomic<std::uint64_t> midiLatest { 0 };
+    std::atomic<bool> midiCaptureEnabled { false };
+    std::uint64_t midiSerial = 0; // Audio thread only.
+    std::uint64_t midiArmAfter = 0;
+    std::uint64_t midiLastDrained = 0;
+    juce::String midiArmedId;
+    void captureMidiCC(const juce::MidiBuffer&) noexcept;
+    void timerCallback() override;
+    void updateMidiCapture();
+    void loadMidiMappings();
+    void saveMidiMappings() const;
     static constexpr int stateSchemaVersion = 3;
     static constexpr int channelCount = 2;
     static constexpr int distortionTypeCount = 24;

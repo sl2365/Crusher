@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "MidiLearnIcon.h"
 #include <BinaryData.h>
 #include <algorithm>
 #include <cmath>
@@ -1138,6 +1139,12 @@ public:
             setTooltip("Drop a Crusher knob label here. The small knob sets that target's individual modulation depth.");
         }
 
+        void visitMidiDepths(const std::function<void(juce::Component&, const juce::String&, juce::Rectangle<int>, bool)>& visit)
+        {
+            const auto slots = assignedSlots();
+            for (int row = 0; row < visibleRowCount() && row + firstVisibleRow < static_cast<int>(slots.size()); ++row)
+                visit(*this, crusher::sequencer::targetDepthParameterId(slots[static_cast<std::size_t>(row + firstVisibleRow)]), depthBoundsForVisibleRow(row), true);
+        }
         bool isInterestedInDragSource(const SourceDetails& details) override
         {
             const auto description = details.description.toString();
@@ -1313,6 +1320,8 @@ public:
 
         void mouseDown(const juce::MouseEvent& event) override
         {
+            if (event.mods.isMiddleButtonDown()) { resetDepth(event, true); return; }
+            if (!event.mods.isLeftButtonDown()) return;
             if (randomButtonBounds().contains(event.getPosition()))
             {
                 randomiseTargets();
@@ -1386,6 +1395,14 @@ public:
 
         void mouseDoubleClick(const juce::MouseEvent& event) override
         {
+            if (event.mods.isLeftButtonDown() && !event.mods.isMiddleButtonDown() && !event.mods.isRightButtonDown())
+                resetDepth(event, false);
+        }
+
+        void resetDepth(const juce::MouseEvent& event, bool init)
+        {
+            if (! isEnabled())
+                return;
             const int row = (event.y - 20) / rowHeight + firstVisibleRow;
             const auto slots = assignedSlots();
             if (event.y < 20
@@ -1398,8 +1415,8 @@ public:
                     event.getPosition()))
                 return;
 
-            auto* parameter = depths[static_cast<size_t>(
-                slots[static_cast<size_t>(row)])];
+            const int slot = slots[static_cast<size_t>(row)];
+            auto* parameter = depths[static_cast<size_t>(slot)];
             if (parameter == nullptr)
                 return;
             if (draggedDepthParameter != nullptr)
@@ -1407,9 +1424,10 @@ public:
                 draggedDepthParameter->endChangeGesture();
                 draggedDepthParameter = nullptr;
             }
-            parameter->beginChangeGesture();
-            parameter->setValueNotifyingHost(parameter->getDefaultValue());
-            parameter->endChangeGesture();
+            const auto saved = init ? std::optional<float>{}
+                : processor.getSavedParameterValue(crusher::sequencer::targetDepthParameterId(slot));
+            const float value = saved.value_or(parameter->convertFrom0to1(parameter->getDefaultValue()));
+            setParameterActualValue(parameter, value);
             setDepthTooltip(parameter->convertFrom0to1(
                 parameter->getValue()));
             repaint();
@@ -1724,6 +1742,7 @@ public:
             button->getProperties().set("compactPresetArrow", true);
         rangeLinkButton.setButtonText({});
         rangeLinkButton.setClickingTogglesState(true);
+        rangeLinkButton.getProperties().set("yellowActive", true);
         rangeLinkButton.getProperties().set("rangeLinkIcon", true);
         rangeLinkButton.getProperties().set("compactRangeLink", true);
         rangeLinkButton.getProperties().set("activeColour",
@@ -1844,12 +1863,15 @@ public:
         directionAttachment = std::make_unique<
             juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
                 processor.parameters, "sequencerDirection", directionBox);
+        directionBox.getProperties().set("midiLearnId", "sequencerDirection");
         hostSyncAttachment = std::make_unique<
             juce::AudioProcessorValueTreeState::ButtonAttachment>(
                 processor.parameters, "sequencerHostSync", hostSync);
+        hostSync.getProperties().set("midiLearnId", "sequencerHostSync");
         enabledAttachment = std::make_unique<
             juce::AudioProcessorValueTreeState::ButtonAttachment>(
                 processor.parameters, "sequencerEnabled", enabledButton);
+        enabledButton.getProperties().set("midiLearnId", "sequencerEnabled");
         enabledButton.onStateChange = [this]
         {
             updateSequencerControlEnablement();
@@ -1884,6 +1906,8 @@ public:
         rangeLinkAttachment = std::make_unique<
             juce::AudioProcessorValueTreeState::ButtonAttachment>(
                 processor.parameters, "sequencerRangeLink", rangeLinkButton);
+        rangeLinkButton.getProperties().set("midiLearnId", "sequencerRangeLink");
+        gateModeButton.getProperties().set("midiLearnId", "sequencerGateMode");
         if (auto* gateModeParameter = processor.parameters.getParameter(
                 "sequencerGateMode"))
         {
@@ -2231,6 +2255,9 @@ public:
         targets.setBounds(774, 92, getWidth() - 792, 136);
     }
 
+    void visitMidiDepths(const std::function<void(juce::Component&, const juce::String&, juce::Rectangle<int>, bool)>& visit)
+    { if (targets.isShowing() && targets.isEnabled()) targets.visitMidiDepths(visit); }
+
 private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     void setPolarityMode(int polarityMode)
@@ -2434,14 +2461,21 @@ private:
     }
 
     std::unique_ptr<SliderAttachment> makeSliderAttachment(
-        const juce::String& id, juce::Slider& slider)
+        const juce::String& id, DetentedSlider& slider)
     {
+        configureSavedReset(slider, id);
         return std::make_unique<SliderAttachment>(processor.parameters,
                                                    id, slider);
     }
 
     void configureSavedReset(DetentedSlider& slider, juce::String id)
     {
+        slider.getProperties().set("midiLearnId", id);
+        if (auto* parameter = processor.parameters.getParameter(id))
+        {
+            const auto initValue = parameter->convertFrom0to1(parameter->getDefaultValue());
+            slider.onInitReset = [&slider, initValue] { slider.setValue(initValue, juce::sendNotificationSync); };
+        }
         slider.onSavedStateReset = [this, &slider, id = std::move(id)]
         {
             const auto saved = processor.getSavedParameterValue(id);
@@ -2657,9 +2691,9 @@ private:
     ParameterDragLabel moveLabel;
     ParameterDragLabel shortGateLabel;
     ParameterDragLabel longGateLabel;
-    juce::Slider colourSlider;
-    juce::Slider saturationSlider;
-    juce::Slider luminanceSlider;
+    DetentedSlider colourSlider;
+    DetentedSlider saturationSlider;
+    DetentedSlider luminanceSlider;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>
         hostSyncAttachment, enabledAttachment,
         rangeLinkAttachment;
@@ -2968,11 +3002,13 @@ public:
     void mouseDown(const juce::MouseEvent& event) override
     {
         selectedBand = nearestBand(event.position);
+        if (event.mods.isMiddleButtonDown()) { resetBand(true); return; }
         if (event.mods.isRightButtonDown())
         {
             showShapeMenu();
             return;
         }
+        if (!event.mods.isLeftButtonDown()) return;
         activeFrequency = handles[static_cast<size_t>(selectedBand)].frequency;
         activeGain = handles[static_cast<size_t>(selectedBand)].gain;
         if (activeFrequency != nullptr && activeGain != nullptr)
@@ -3007,13 +3043,24 @@ public:
 
     void mouseDoubleClick(const juce::MouseEvent& event) override
     {
+        if (!event.mods.isLeftButtonDown() || event.mods.isMiddleButtonDown() || event.mods.isRightButtonDown()) return;
         selectedBand = nearestBand(event.position);
-        const auto index = static_cast<size_t>(selectedBand);
-        auto& b = handles[index];
-        setWithGesture(b.frequency, crusher::eq::defaultFrequencies[index]);
-        setWithGesture(b.gain, 0.0f);
-        setWithGesture(b.q, 1.0f);
-        setWithGesture(b.shape, 0.0f);
+        resetBand(false);
+    }
+
+    void resetBand(bool init)
+    {
+        auto& b = handles[static_cast<size_t>(selectedBand)];
+        const auto prefix = "eq" + juce::String(selectedBand + 1);
+        const std::array<juce::RangedAudioParameter*, 4> parameters { b.frequency, b.gain, b.q, b.shape };
+        const std::array<const char*, 4> suffixes { "Freq", "Gain", "Q", "Shape" };
+        for (std::size_t i = 0; i < parameters.size(); ++i)
+        {
+            auto* parameter = parameters[i];
+            if (parameter == nullptr) continue;
+            const auto saved = init ? std::optional<float>{} : processor.getSavedParameterValue(prefix + suffixes[i]);
+            setWithGesture(parameter, saved.value_or(parameter->convertFrom0to1(parameter->getDefaultValue())));
+        }
         repaint();
     }
 
@@ -3190,6 +3237,7 @@ private:
     void showShapeMenu()
     {
         juce::PopupMenu menu;
+        menu.setLookAndFeel(&getLookAndFeel());
         const auto& b = handles[static_cast<size_t>(selectedBand)];
         const int active = juce::roundToInt(parameterValue(b.shape));
         const juce::StringArray names { "Bell", "Low Shelf", "High Shelf",
@@ -3280,7 +3328,6 @@ juce::Font CrusherAudioProcessorEditor::LookAndFeel::getPopupMenuFont()
     auto font = juce::LookAndFeel_V4::getPopupMenuFont();
     if (useCompactPopupFont)
         font.setHeight(juce::jmax(9.0f, font.getHeight() - 1.5f));
-    font.setHeight(font.getHeight() * zoomPopupScale);
     return font;
 }
 
@@ -3440,6 +3487,8 @@ void CrusherAudioProcessorEditor::LookAndFeel::drawToggleButton(
     bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
 {
     const auto bounds = button.getLocalBounds().toFloat();
+    const bool midiIcon = static_cast<bool>(button.getProperties().getWithDefault("midiLearnIcon", false));
+    const bool yellowActive = static_cast<bool>(button.getProperties().getWithDefault("yellowActive", false));
     const bool ledOnly = static_cast<bool>(button.getProperties().getWithDefault("ledOnly", false));
     const bool statusLedOnly = static_cast<bool>(
         button.getProperties().getWithDefault("statusLedOnly", false));
@@ -3535,15 +3584,15 @@ void CrusherAudioProcessorEditor::LookAndFeel::drawToggleButton(
 
     if (snowflakeIcon || listIcon || presetArrowDirection != 0
         || saveIcon || saveAsIcon || folderIcon || rangeLinkIcon
-        || randomIcon || mixLockIcon || standardTextButton)
+        || midiIcon || randomIcon || mixLockIcon || standardTextButton)
     {
         const auto buttonBounds = bounds.reduced(0.5f);
         if (! mixLockIcon)
         {
-            g.setColour(active && enabled ? activeColour.darker(0.32f)
+            g.setColour(active && enabled ? (yellowActive ? juce::Colour(0xff47432c) : activeColour.darker(0.32f))
                                          : juce::Colour(0xff242a30));
             g.fillRoundedRectangle(buttonBounds, 3.0f);
-            g.setColour(active && enabled ? activeColour.brighter(0.12f)
+            g.setColour(active && enabled ? (yellowActive ? knobIndicatorColour : activeColour.brighter(0.12f))
                                          : (shouldDrawButtonAsHighlighted
                                                 ? knobLabelColour
                                                 : juce::Colour(0xff59616a)));
@@ -3556,7 +3605,7 @@ void CrusherAudioProcessorEditor::LookAndFeel::drawToggleButton(
             : presetArrowDirection != 0
             ? knobIndicatorColour.withAlpha(enabled ? 0.9f : 0.2f)
             : (enabled
-                   ? (active ? juce::Colours::white : knobValueColour)
+                   ? (active ? (yellowActive ? knobIndicatorColour.brighter(0.12f) : juce::Colours::white) : knobValueColour)
                    : knobLabelColour.darker(0.45f));
         g.setColour(iconColour);
         if (mixLockIcon)
@@ -3571,6 +3620,10 @@ void CrusherAudioProcessorEditor::LookAndFeel::drawToggleButton(
             g.setColour(juce::Colour(0xff242a30));
             g.fillEllipse(centre.x - 1.0f, centre.y + 1.0f,
                           2.0f, 2.0f);
+        }
+        else if (midiIcon)
+        {
+            crusher::artwork::drawMidiLearnIcon(g, bounds, knobLabelColour);
         }
         else if (randomIcon)
         {
@@ -3815,8 +3868,7 @@ void CrusherAudioProcessorEditor::LookAndFeel::drawPopupMenuBackground(
 {
     g.fillAll(juce::Colour(0xff14181d));
     g.setColour(popupBorderColour);
-    g.drawRect(0, 0, width, height,
-               juce::jmax(1, juce::roundToInt(2.0f * zoomPopupScale)));
+    g.drawRect(0, 0, width, height, 2);
 }
 
 juce::PopupMenu::Options
@@ -3831,6 +3883,137 @@ CrusherAudioProcessorEditor::LookAndFeel::getOptionsForComboBoxPopupMenu(
         .withMinimumWidth(box.getWidth())
         .withMaximumNumColumns(1)
         .withStandardItemHeight(label.getHeight());
+}
+
+// Overlay is editor-owned and never intercepts input outside outlined targets.
+class CrusherAudioProcessorEditor::MidiLearnOverlay final : public juce::Component
+{
+public:
+    explicit MidiLearnOverlay(CrusherAudioProcessorEditor& e) : editor(e) {}
+    void refresh()
+    {
+        std::vector<Target> next;
+        const auto add = [&](juce::Component& component, const juce::String& id, juce::Rectangle<int> local, bool circle)
+        {
+            if (id.isEmpty() || !component.isShowing() || !component.isEnabled()
+                || editor.processor.parameters.getParameter(id) == nullptr) return;
+            auto b = getLocalArea(&component, local).toFloat();
+            if (b.isEmpty()) return;
+            for (auto& t : next)
+                if (t.id == id)
+                { t.bounds = t.bounds.getUnion(b); t.circle = false; return; }
+            next.push_back({ id, b, circle, editor.processor.getMidiLearnCC(id), editor.processor.getArmedMidiLearn() == id });
+        };
+        const auto scan = [&](const auto& self, juce::Component& parent) -> void
+        {
+            for (int i = 0; i < parent.getNumChildComponents(); ++i)
+            {
+                auto* child = parent.getChildComponent(i);
+                if (child == this || !child->isShowing()) continue;
+                const auto id = child->getProperties().getWithDefault("midiLearnId", juce::var()).toString();
+                if (id.isNotEmpty())
+                {
+                    if (auto* slider = dynamic_cast<juce::Slider*>(child))
+                    {
+                        const auto style = slider->getSliderStyle();
+                        const bool rotary = style == juce::Slider::Rotary || style == juce::Slider::RotaryHorizontalDrag
+                            || style == juce::Slider::RotaryVerticalDrag || style == juce::Slider::RotaryHorizontalVerticalDrag;
+                        auto b = slider->getLookAndFeel().getSliderLayout(*slider).sliderBounds;
+                        if (rotary)
+                        {
+                            const auto size = juce::jmin(b.getWidth(), b.getHeight());
+                            const int diameter = juce::jmin(size, juce::roundToInt(size * 0.8f + 7.0f));
+                            b = juce::Rectangle<int>(diameter, diameter).withCentre(b.getCentre());
+                        }
+                        add(*child, id, b, rotary);
+                    }
+                    else add(*child, id, child->getLocalBounds(), false);
+                    continue;
+                }
+                self(self, *child);
+            }
+        };
+        scan(scan, editor.content);
+        if (editor.sequencerOpen && editor.sequencerPanel != nullptr) editor.sequencerPanel->visitMidiDepths(add);
+        if (next != targets) { targets = std::move(next); repaint(); }
+    }
+    bool hitTest(int x, int y) override
+    {
+        return find(juce::Point<float>(static_cast<float>(x), static_cast<float>(y))) != nullptr;
+    }
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        const auto* target = find(event.position);
+        if (target == nullptr) return;
+        const auto id = target->id;
+        if (event.mods.isRightButtonDown())
+        {
+            editor.processor.clearMidiLearn(id);
+            editor.information.setText("MIDI LEARN | Assignment cleared.", juce::dontSendNotification);
+        }
+        else if (event.mods.isLeftButtonDown())
+        {
+            editor.processor.armMidiLearn(id);
+            const auto* parameter = editor.processor.parameters.getParameter(id);
+            editor.information.setText("MIDI LEARN | Move a MIDI controller for " + (parameter != nullptr ? parameter->getName(64) : id) + ".", juce::dontSendNotification);
+        }
+        refresh();
+    }
+    void paint(juce::Graphics& g) override
+    {
+        for (const auto& target : targets)
+        {
+            const auto colour = target.armed ? juce::Colour(0xffffd46a) : juce::Colour(0xff69bfff);
+            g.setColour(colour.withAlpha(target.cc >= 0 || target.armed ? 1.0f : 0.7f));
+            if (target.circle) g.drawEllipse(target.bounds, 1.5f);
+            else g.drawRoundedRectangle(target.bounds, 2.0f, 1.3f);
+            if (target.cc >= 0)
+            {
+                const auto badge = juce::Rectangle<float>(22.0f, 12.0f).withCentre(
+                    { target.bounds.getCentreX(), target.bounds.getBottom() - 3.0f });
+                g.setColour(juce::Colour(0xff316b9f));
+                g.fillRoundedRectangle(badge, 3.0f);
+                g.setColour(juce::Colour(0xffa8d8ff));
+                g.drawRoundedRectangle(badge, 3.0f, 0.8f);
+                g.setColour(juce::Colours::white);
+                g.setFont(juce::FontOptions(9.0f, juce::Font::bold));
+                g.drawText(juce::String(target.cc), badge.toNearestInt(), juce::Justification::centred, false);
+            }
+        }
+    }
+private:
+    struct Target
+    {
+        juce::String id;
+        juce::Rectangle<float> bounds;
+        bool circle;
+        int cc;
+        bool armed;
+        bool operator==(const Target& t) const { return id == t.id && bounds == t.bounds && circle == t.circle && cc == t.cc && armed == t.armed; }
+    };
+    const Target* find(juce::Point<float> point) const
+    {
+        for (auto it = targets.rbegin(); it != targets.rend(); ++it)
+            if (it->bounds.contains(point) || (it->cc >= 0 && juce::Rectangle<float>(22.0f, 12.0f).withCentre({ it->bounds.getCentreX(), it->bounds.getBottom() - 3.0f }).contains(point))) return &*it;
+        return nullptr;
+    }
+    CrusherAudioProcessorEditor& editor;
+    std::vector<Target> targets;
+};
+
+void CrusherAudioProcessorEditor::setMidiLearnOpen(bool open)
+{
+    if (midiLearnOverlay == nullptr) return;
+    midiLearnButton.setToggleState(open, juce::dontSendNotification);
+    midiLearnOverlay->setVisible(open);
+    if (open)
+    {
+        midiLearnOverlay->setBounds(content.getLocalBounds());
+        midiLearnOverlay->toFront(false);
+        midiLearnOverlay->refresh();
+        information.setText("MIDI LEARN | Click a highlighted control, then move a MIDI CC controller. Right-click to clear.", juce::dontSendNotification);
+    }
+    else processor.cancelMidiLearn();
 }
 
 CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& p)
@@ -3861,7 +4044,7 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     content.addMouseListener(this, true);
     content.setInterceptsMouseClicks(false, true);
 
-    versionLabel.setText("v1.45.2", juce::dontSendNotification);
+    versionLabel.setText("v1.46.0", juce::dontSendNotification);
     versionLabel.setJustificationType(juce::Justification::centred);
     versionLabel.setColour(juce::Label::textColourId, knobIndicatorColour);
     versionLabel.setFont(juce::Font(juce::FontOptions(8.5f,
@@ -4025,6 +4208,7 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     themeDial->slider.setValue(storedSettings.themePercent,
                                juce::dontSendNotification);
     themeDial->slider.setDoubleClickReturnValue(true, 50.0);
+    themeDial->slider.onInitReset = [this] { themeDial->slider.setValue(50.0, juce::sendNotificationSync); };
     themeDial->slider.setTextBoxStyle(
         juce::Slider::NoTextBox, false, 0, 0);
     themeDial->slider.onValueChange = [this]
@@ -4041,6 +4225,13 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
         "mix", "MIX",
         "Browser copy of the main Mix control. It changes the same Mix level without becoming a sequencer target.");
     browserMixDial->parameterId.clear();
+    browserMixDial->slider.onSavedStateReset = [this]
+    {
+        const auto saved = processor.getSavedParameterValue("mix");
+        if (!saved.has_value()) return false;
+        browserMixDial->slider.setValue(*saved, juce::sendNotificationSync);
+        return true;
+    };
     browserMixDial->label.parameterIdProvider = {};
     browserMixDial->label.setInterceptsMouseClicks(false, false);
     browserMixDial->label.setTooltip("MIX | Adjust Mix while the preset browser is open.");
@@ -4088,6 +4279,7 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     ampCabinetAttachment = std::make_unique<
         juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
             processor.parameters, "ampCabinet", ampCabinetBox);
+    ampCabinetBox.getProperties().set("midiLearnId", "ampCabinet");
     // distModeBox remains a hidden ComboBoxAttachment bridge to the shared
     // host parameter. Two compact radio LEDs are the visible selector.
     distModeBox.addItem("STEREO", 1);
@@ -4096,7 +4288,10 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     distModeAttachment = std::make_unique<
         juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
             processor.parameters, "distMode", distModeBox);
+    distModeBox.getProperties().set("midiLearnId", "distMode");
 
+    distStereoButton.getProperties().set("midiLearnId", "distMode");
+    distMonoButton.getProperties().set("midiLearnId", "distMode");
     const juce::String modeHelp =
         "STEREO/MONO | Stereo preserves independent inputs; Mono sums left and right before any distortion engine. Some engines can still produce stereo output.";
     for (auto* button : { &distStereoButton, &distMonoButton })
@@ -4168,6 +4363,7 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     eqOnAttachment = std::make_unique<
         juce::AudioProcessorValueTreeState::ButtonAttachment>(
             processor.parameters, "eqEnabled", eqOnButton);
+    eqOnButton.getProperties().set("midiLearnId", "eqEnabled");
     eqModeBox.addItem("PRE", 1);
     eqModeBox.addItem("EMPH", 2);
     eqModeBox.addItem("POST", 3);
@@ -4183,6 +4379,7 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     eqModeAttachment = std::make_unique<
         juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
             processor.parameters, "eqMode", eqModeBox);
+    eqModeBox.getProperties().set("midiLearnId", "eqMode");
     // RESET is momentary; its idle artwork matches the filter selectors.
     eqResetButton.setName("Reset");
     eqResetButton.getProperties().set("filterSelectorTextButton", true);
@@ -4261,6 +4458,7 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     if (distortionTypeAttachment != nullptr)
         distortionTypeAttachment->sendInitialUpdate();
 
+    distortionTypeBox.getProperties().set("midiLearnId", "distortionType");
     const auto setupEffectButton = [this](
         juce::ToggleButton& button, const juce::String& name,
         const juce::String& tooltip, const juce::Colour colour)
@@ -4301,6 +4499,7 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     filterShapeAttachment = std::make_unique<
         juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
             processor.parameters, "filterShape", filterShapeBox);
+    filterShapeBox.getProperties().set("midiLearnId", "filterShape");
     const std::array<FilterShapeButton*, 3> filterButtons
         { &filterLowButton, &filterBandButton, &filterHighButton };
     const std::array<juce::String, 3> filterNames
@@ -4310,6 +4509,7 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     {
         auto* button = filterButtons[static_cast<size_t>(i)];
         button->setClickingTogglesState(false);
+        button->getProperties().set("midiLearnId", "filterShape");
         button->setTooltip(filterNames[static_cast<size_t>(i)]);
         button->onClick = [this, i]
         {
@@ -4330,20 +4530,25 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     distortionOnAttachment = std::make_unique<
         juce::AudioProcessorValueTreeState::ButtonAttachment>(
             processor.parameters, "distortionEnabled", distortionOnButton);
+    distortionOnButton.getProperties().set("midiLearnId", "distortionEnabled");
     filterOnAttachment = std::make_unique<
         juce::AudioProcessorValueTreeState::ButtonAttachment>(
             processor.parameters, "filterEnabled", filterOnButton);
+    filterOnButton.getProperties().set("midiLearnId", "filterEnabled");
     setupPowerLed(envOnButton, "Global Envelope On",
         "ENV | Enable audio-driven modulation for all distortion types.");
     envOnAttachment = std::make_unique<
         juce::AudioProcessorValueTreeState::ButtonAttachment>(
             processor.parameters, "envEnabled", envOnButton);
+    envOnButton.getProperties().set("midiLearnId", "envEnabled");
     compressorOnAttachment = std::make_unique<
         juce::AudioProcessorValueTreeState::ButtonAttachment>(
             processor.parameters, "compEnabled", compressorOnButton);
+    compressorOnButton.getProperties().set("midiLearnId", "compEnabled");
     phatAttachment = std::make_unique<
         juce::AudioProcessorValueTreeState::ButtonAttachment>(
             processor.parameters, "compPhat", phatButton);
+    phatButton.getProperties().set("midiLearnId", "compPhat");
 
     const auto trackLockedMix = [this](Dial& dial)
     {
@@ -4377,6 +4582,7 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     };
     content.addAndMakeVisible(mixLockButton);
 
+    bypassButton.getProperties().set("midiLearnId", "bypass");
     bypassButton.setName("Power");
     bypassButton.setTooltip("POWER | Bypass the Crusher effect processing.");
     bypassButton.getProperties().set("ledOnly", true);
@@ -4411,6 +4617,7 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     presetBrowserButton.getProperties().set(
         "activeColour", presetAccentColour.toString());
     presetBrowserButton.setClickingTogglesState(true);
+    presetBrowserButton.getProperties().set("yellowActive", true);
     presetBrowserButton.onClick = [this]
     {
         setPresetBrowserOpen(presetBrowserButton.getToggleState());
@@ -4516,6 +4723,14 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
                 juce::dontSendNotification);
     };
 
+    midiLearnButton.setName("MIDI LEARN");
+    midiLearnButton.setTooltip("Click a highlighted control, then move a MIDI CC controller; right-click to clear its assignment.");
+    midiLearnButton.setClickingTogglesState(true);
+    midiLearnButton.getProperties().set("midiLearnIcon", true);
+    midiLearnButton.getProperties().set("yellowActive", true);
+    midiLearnButton.onClick = [this] { setMidiLearnOpen(midiLearnButton.getToggleState()); };
+    content.addAndMakeVisible(midiLearnButton);
+
     randomButton.setClickingTogglesState(false);
     randomButton.setName("Randomise");
     randomButton.getProperties().set("randomIcon", true);
@@ -4560,6 +4775,7 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     sequencerPanel->setVisible(sequencerOpen);
 
     sequencerButton.setClickingTogglesState(true);
+    sequencerButton.getProperties().set("yellowActive", true);
     sequencerButton.setName("Sequencer");
     sequencerButton.setToggleState(sequencerOpen,
                                    juce::dontSendNotification);
@@ -4589,12 +4805,17 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     observedEditorWidth = getWidth();
     observedThemeValue = themeDial->slider.getValue();
     saveInterfaceSettings();
+    midiLearnOverlay = std::make_unique<MidiLearnOverlay>(*this);
+    content.addChildComponent(*midiLearnOverlay);
+    midiLearnOverlay->setVisible(false);
     startTimerHz(30);
 }
 
 CrusherAudioProcessorEditor::~CrusherAudioProcessorEditor()
 {
     stopTimer();
+    processor.cancelMidiLearn();
+    midiLearnOverlay.reset();
     saveInterfaceSettings();
     if (presetFolderNameWindow != nullptr)
     {
@@ -4659,11 +4880,8 @@ void CrusherAudioProcessorEditor::showZoomMenu(juce::Point<int> screenPosition)
     const int currentPercent = juce::roundToInt(
         100.0f * static_cast<float>(getWidth())
                / static_cast<float>(designWidth));
-    const float menuScale = juce::jlimit(0.75f, 3.0f,
-        static_cast<float>(getWidth()) / static_cast<float>(designWidth));
-    zoomMenuLookAndFeel.setZoomPopupScale(menuScale);
-    zoomMenuLookAndFeel.setPopupBorderColour(lookAndFeel.getPopupBorderColour());
-    menu.setLookAndFeel(&zoomMenuLookAndFeel);
+    menu.setLookAndFeel(&lookAndFeel);
+    menu.addSectionHeader("GUI Zoom");
     for (const int percent : { 75, 100, 125, 150, 175, 200,
                                225, 250, 275, 300 })
         menu.addItem(percent, juce::String(percent) + "%", true,
@@ -4671,10 +4889,12 @@ void CrusherAudioProcessorEditor::showZoomMenu(juce::Point<int> screenPosition)
     // Anchor the popup to the rendered logo's bottom-left corner,
     // at any supported zoom.
     menu.showMenuAsync(juce::PopupMenu::Options()
+                           .withTargetComponent(&content)
                            .withTargetScreenArea({ screenPosition.x,
                                                    screenPosition.y, 1, 1 })
-                           .withMinimumWidth(juce::roundToInt(116.0f * menuScale))
-                           .withStandardItemHeight(juce::roundToInt(23.0f * menuScale))
+                           .withMinimumWidth(75)
+                           .withMaximumNumColumns(1)
+                           .withStandardItemHeight(19)
                            .withPreferredPopupDirection(
                                juce::PopupMenu::Options::PopupDirection::downwards),
         [safeThis = juce::Component::SafePointer<CrusherAudioProcessorEditor>(this)]
@@ -4776,6 +4996,15 @@ CrusherAudioProcessorEditor::Dial* CrusherAudioProcessorEditor::addDial(
         10.5f, juce::Font::bold)));
     content.addAndMakeVisible(dial->slider);
     content.addAndMakeVisible(dial->label);
+    if (attachToParameter)
+    {
+        dial->slider.getProperties().set("midiLearnId", id);
+        if (auto* parameter = processor.parameters.getParameter(id))
+        {
+            const auto initValue = parameter->convertFrom0to1(parameter->getDefaultValue());
+            pointer->slider.onInitReset = [pointer, initValue] { pointer->slider.setValue(initValue, juce::sendNotificationSync); };
+        }
+    }
     if (attachToParameter)
         dial->attachment = std::make_unique<SliderAttachment>(
             processor.parameters, id, dial->slider);
@@ -4959,6 +5188,7 @@ void CrusherAudioProcessorEditor::showParameterEnvMenu(
     const bool available = processor.getEnvelopeAssignmentCount()
         < processor.getEnvelopeTargetLimit();
     juce::PopupMenu menu;
+    menu.setLookAndFeel(&lookAndFeel);
     menu.addItem(1, "Set Env Target", available || assigned, assigned);
     menu.addItem(2, "Remove Env Target", assigned);
     menu.addSeparator();
@@ -4971,6 +5201,8 @@ void CrusherAudioProcessorEditor::showParameterEnvMenu(
         // Keep the six-knob grid unchanged: the AA stages are available in
         // RATE's existing right-click menu and through host automation.
         juce::PopupMenu pre, post;
+        pre.setLookAndFeel(&lookAndFeel);
+        post.setLookAndFeel(&lookAndFeel);
         const auto* preParam = processor.parameters.getRawParameterValue("loFiPreAA");
         const auto* postParam = processor.parameters.getRawParameterValue("loFiPostAA");
         const auto addLevels = [](juce::PopupMenu& submenu, int base,
@@ -5353,6 +5585,8 @@ void CrusherAudioProcessorEditor::updatePresetBrowserVisibility()
         icon->setVisible(! presetBrowserOpen);
     updateEQEnvView();
     information.setVisible(! presetBrowserOpen);
+    if (presetBrowserOpen) setMidiLearnOpen(false);
+    midiLearnButton.setVisible(! presetBrowserOpen);
     randomButton.setVisible(! presetBrowserOpen);
     mixLockButton.setVisible(! presetBrowserOpen);
     presetFolderLabel.setVisible(presetBrowserOpen);
@@ -5649,7 +5883,7 @@ void CrusherAudioProcessorEditor::showPresetContextMenu(
                  copiedPresetFile.existsAsFile()
                     && ! favouritesViewSelected
                     && selectedPresetFolder.isDirectory());
-    lookAndFeel.setPopupBorderColour(filterAccent(1));
+    lookAndFeel.setPopupBorderColour(themeDistortionRed);
     const auto safeThis = juce::Component::SafePointer<
         CrusherAudioProcessorEditor>(this);
     const auto destinationFolder = selectedPresetFolder;
@@ -5841,7 +6075,7 @@ void CrusherAudioProcessorEditor::showPresetFolderContextMenu(
     menu.addItem(3, "Paste preset here",
                  ! favourites && copiedPresetFile.existsAsFile()
                     && folder.isDirectory());
-    lookAndFeel.setPopupBorderColour(filterAccent(1));
+    lookAndFeel.setPopupBorderColour(themeDistortionRed);
     const auto safeThis = juce::Component::SafePointer<
         CrusherAudioProcessorEditor>(this);
     menu.showMenuAsync(
@@ -6025,7 +6259,7 @@ void CrusherAudioProcessorEditor::showPresetQuickMenu()
     juce::PopupMenu menu;
     menu.setLookAndFeel(&lookAndFeel);
     menu.addCustomItem(1, std::move(quickList), nullptr, "Preset list");
-    lookAndFeel.setPopupBorderColour(filterAccent(1));
+    lookAndFeel.setPopupBorderColour(themeDistortionRed);
     menu.showMenuAsync(
         juce::PopupMenu::Options()
             .withTargetComponent(&currentPresetLabel)
@@ -6355,7 +6589,7 @@ void CrusherAudioProcessorEditor::paint(juce::Graphics& g)
 
     const juce::Rectangle<float> typeStrip(
         18.0f, 53.0f, static_cast<float>(designWidth - 36), 7.0f);
-    g.setColour(themeDistortionRed);
+    g.setColour(themeDistortionRed.withAlpha(static_cast<float>(1.0 - std::abs(themeValue - 50.0) / 50.0)));
     g.fillRoundedRectangle(typeStrip, 3.5f);
 
     if (logoDrawable != nullptr)
@@ -6662,6 +6896,7 @@ void CrusherAudioProcessorEditor::resized()
     presetOpenFolderButton.setBounds(870, 175, 26, 26);
 
     information.setBounds(25, 236, 670, 28);
+    midiLearnButton.setBounds(800, 236, 26, 26);
     randomButton.setBounds(836, 236, 26, 26);
     sequencerButton.setBounds(presetBrowserOpen ? 865 : 872,
                               presetBrowserOpen ? 220 : 236,
@@ -6670,6 +6905,12 @@ void CrusherAudioProcessorEditor::resized()
         sequencerPanel->setBounds(
             8, collapsedDesignHeight, designWidth - 16,
             expandedDesignHeight - collapsedDesignHeight - 8);
+
+    if (midiLearnOverlay != nullptr)
+    {
+        midiLearnOverlay->setBounds(content.getLocalBounds());
+        if (midiLearnOverlay->isVisible()) midiLearnOverlay->refresh();
+    }
 
     if (isShowing() && ! presetBrowserOpen
         && getWidth() != observedEditorWidth)
@@ -6702,6 +6943,7 @@ void CrusherAudioProcessorEditor::timerCallback()
     updateDistortionControls();
     updateSectionDimming();
     updateSequencerTargetHighlights();
+    if (midiLearnOverlay != nullptr && midiLearnOverlay->isVisible()) midiLearnOverlay->refresh();
     if (sequencerOpen && sequencerPanel != nullptr)
         sequencerPanel->timerTick();
     updateAnimatedParameterDisplays();
