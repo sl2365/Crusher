@@ -205,9 +205,12 @@ private:
     class LookAndFeel final : public juce::LookAndFeel_V4
     {
     public:
-        explicit LookAndFeel(bool compactPopupFont = false);
+        explicit LookAndFeel(bool compactPopupFont = false, bool zoomMenu = false);
         juce::Label* createSliderTextBox(juce::Slider&) override;
         juce::Font getPopupMenuFont() override;
+        void getIdealPopupMenuSectionHeaderSizeWithOptions(
+            const juce::String&, int, int&, int&,
+            const juce::PopupMenu::Options&) override;
         juce::Font getComboBoxFont(juce::ComboBox&) override;
         void drawRotarySlider(juce::Graphics&, int, int, int, int,
                               float, float, float, juce::Slider&) override;
@@ -237,11 +240,15 @@ private:
     private:
         juce::Colour popupBorderColour { 0xff8e414b };
         bool useCompactPopupFont = false;
+        bool isZoomMenu = false;
     };
 
     CrusherAudioProcessor& processor;
     LookAndFeel lookAndFeel;
+    LookAndFeel zoomMenuLookAndFeel { false, true };
     juce::Component content;
+    juce::Component logoHitTarget;
+    bool zoomMenuOpen = false;
     std::vector<std::unique_ptr<Dial>> dials;
     Dial* driveDial = nullptr;
     Dial* mechDial = nullptr;
@@ -474,7 +481,8 @@ private:
     void refreshPresetList();
     void updatePresetNavigationDisplay();
     void setSequencerOpen(bool);
-    void showZoomMenu(juce::Point<int> screenPosition);
+    juce::Rectangle<float> renderedLogoBounds() const;
+    void showZoomMenu();
     void updateSequencerTargetHighlights();
     void updateAnimatedParameterDisplays();
     void randomiseEffectParameters();

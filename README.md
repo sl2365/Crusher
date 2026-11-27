@@ -103,7 +103,7 @@ All five new controls are saved, automated and available to the existing sequenc
 - Click the vector MIDI socket button immediately left of Randomise to show MIDI Learn. Click a blue outlined control and move a MIDI CC controller; the armed outline is yellow and the assigned CC number appears on a bottom-centred blue badge. Right-click an outlined control to remove its assignment. Click the MIDI button again to leave Learn mode. MIDI CC assignments continue working with the interface closed; the host must route MIDI CCs into Crusher.
 - Learn supports visible attached parameter knobs, sliders, dropdowns, section power/bypass buttons, shared stereo/mono and filter-shape selectors, and sequencer controls and target depths. UI-only buttons, sequencer grid cells, the multi-axis EQ graph and hidden context-menu-only parameters are not separate overlay targets.
 - CCs 0–119 are supported across all MIDI channels; one CC maps to one parameter and one parameter to one CC. Assignment replaces an existing conflicting mapping. Mappings are saved in `Crusher_Data/Settings/MidiLearn.ini` separately from presets, and are loaded when a plugin instance is created.
-- Click the logo to open the **GUI Zoom** menu (75–300%). Preset, SEQ and Start/End Link use the common yellow active styling.
+- Click the logo to toggle the **GUI Zoom** menu (75–300%). The hand cursor marks the logo’s clickable area. Click outside the menu to dismiss it. Preset, SEQ and Start/End Link use the common yellow active styling.
 
 ## Sequencer and presets
 
@@ -117,7 +117,7 @@ All five new controls are saved, automated and available to the existing sequenc
 ## Identity and storage
 
 - Project/output: `Crusher`, VST3 binary `Crusher.vst3`
-- Version: `1.46.0`; manufacturer `sl23`; plugin code `cru1`; bundle ID `com.sl23.crusher`
+- Version: `1.46.1`; manufacturer `sl23`; plugin code `cru1`; bundle ID `com.sl23.crusher`
 - State root: `CrusherParameters`, schema version **3**
 - Presets: `.crusherpreset`; sequences: `.crusherseq` (`CrusherSequence` state root)
 - Portable data: **`Crusher_Data`** beside the installed VST3 when needed; the build does not create this directory.

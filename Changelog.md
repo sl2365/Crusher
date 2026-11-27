@@ -1,5 +1,11 @@
 # Crusher Changelog
 
+## v1.46.1 — Logo and GUI Zoom menu (2026-11-27)
+
+- Matched the compact Dusk screenshot with a 12-pixel menu font, 104-pixel minimum width, 19-pixel rows and compact GUI Zoom heading; retains Crusher’s theme border and zoom scaling.
+- Dedicated hand-cursor logo hit target follows the rendered PNG and is the actual JUCE popup target, preventing a second logo click from reopening the menu. Native outside-click and focus-loss dismissal retained.
+- GUI-only change; DSP, MIDI Learn and other menus unchanged. Windows build and PHI visual/interaction testing pending.
+
 ## v1.46.0 — Shared interface and MIDI Learn (2026-11-26)
 
 - Ported Transform MIDI Learn vector icon, overlay outlines, armed colour and bottom-centred CC badges, message-thread mapping/notifications and portable INI storage. Added Crusher-specific visible controls including bypass and filter shape. No new host parameters or preset schema changes.

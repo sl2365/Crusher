@@ -3309,8 +3309,8 @@ private:
 };
 
 CrusherAudioProcessorEditor::LookAndFeel::LookAndFeel(
-    bool compactPopupFont)
-    : useCompactPopupFont(compactPopupFont)
+    bool compactPopupFont, bool zoomMenu)
+    : useCompactPopupFont(compactPopupFont), isZoomMenu(zoomMenu)
 {
     setColour(juce::Slider::textBoxTextColourId, knobValueColour);
     setColour(juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
@@ -3326,9 +3326,25 @@ CrusherAudioProcessorEditor::LookAndFeel::LookAndFeel(
 juce::Font CrusherAudioProcessorEditor::LookAndFeel::getPopupMenuFont()
 {
     auto font = juce::LookAndFeel_V4::getPopupMenuFont();
-    if (useCompactPopupFont)
+    if (isZoomMenu)
+        font.setHeight(12.0f);
+    else if (useCompactPopupFont)
         font.setHeight(juce::jmax(9.0f, font.getHeight() - 1.5f));
     return font;
+}
+
+void CrusherAudioProcessorEditor::LookAndFeel::getIdealPopupMenuSectionHeaderSizeWithOptions(
+    const juce::String& text, int standardHeight, int& width, int& height,
+    const juce::PopupMenu::Options& options)
+{
+    if (isZoomMenu)
+    {
+        width = 100;
+        height = 18;
+        return;
+    }
+    juce::LookAndFeel_V4::getIdealPopupMenuSectionHeaderSizeWithOptions(
+        text, standardHeight, width, height, options);
 }
 
 juce::Font CrusherAudioProcessorEditor::LookAndFeel::getComboBoxFont(
@@ -4043,8 +4059,12 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
     addAndMakeVisible(content);
     content.addMouseListener(this, true);
     content.setInterceptsMouseClicks(false, true);
+    // A dedicated popup target matches the painted logo and consumes its close click.
+    logoHitTarget.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    content.addAndMakeVisible(logoHitTarget);
+    zoomMenuLookAndFeel.setColour(juce::PopupMenu::headerTextColourId, juce::Colours::white);
 
-    versionLabel.setText("v1.46.0", juce::dontSendNotification);
+    versionLabel.setText("v1.46.1", juce::dontSendNotification);
     versionLabel.setJustificationType(juce::Justification::centred);
     versionLabel.setColour(juce::Label::textColourId, knobIndicatorColour);
     versionLabel.setFont(juce::Font(juce::FontOptions(8.5f,
@@ -4814,6 +4834,8 @@ CrusherAudioProcessorEditor::CrusherAudioProcessorEditor(CrusherAudioProcessor& 
 CrusherAudioProcessorEditor::~CrusherAudioProcessorEditor()
 {
     stopTimer();
+    if (zoomMenuOpen)
+        juce::PopupMenu::dismissAllActiveMenus();
     processor.cancelMidiLearn();
     midiLearnOverlay.reset();
     saveInterfaceSettings();
@@ -4840,22 +4862,13 @@ bool CrusherAudioProcessorEditor::keyPressed(const juce::KeyPress& key)
 
 void CrusherAudioProcessorEditor::mouseDown(const juce::MouseEvent& event)
 {
-    const auto position = event.getEventRelativeTo(&content).position;
-    if (event.mods.isLeftButtonDown() && logoDrawable != nullptr)
+    if (event.eventComponent == &logoHitTarget && event.mods.isLeftButtonDown())
     {
-        // Use the same proportional placement as the painted PNG, not
-        // the entire available header rectangle.
-        const auto logoBounds = juce::RectanglePlacement(
-            juce::RectanglePlacement::xLeft | juce::RectanglePlacement::yMid)
-            .appliedTo(logoDrawable->getDrawableBounds(),
-                       juce::Rectangle<float>(22.0f, 5.0f, 280.0f, 43.0f));
-        if (logoBounds.contains(position))
-        {
-            showZoomMenu(content.localPointToGlobal(juce::Point<int>(
-                juce::roundToInt(logoBounds.getX()),
-                juce::roundToInt(logoBounds.getBottom()))));
-            return;
-        }
+        if (zoomMenuOpen)
+            juce::PopupMenu::dismissAllActiveMenus();
+        else
+            showZoomMenu();
+        return;
     }
     if (! presetBrowserOpen || ! event.mods.isPopupMenu())
         return;
@@ -4874,13 +4887,28 @@ void CrusherAudioProcessorEditor::mouseDown(const juce::MouseEvent& event)
     }
 }
 
-void CrusherAudioProcessorEditor::showZoomMenu(juce::Point<int> screenPosition)
+juce::Rectangle<float> CrusherAudioProcessorEditor::renderedLogoBounds() const
 {
+    if (logoDrawable == nullptr)
+        return {};
+    return juce::RectanglePlacement(
+        juce::RectanglePlacement::xLeft | juce::RectanglePlacement::yMid)
+        .appliedTo(logoDrawable->getDrawableBounds(),
+                   juce::Rectangle<float>(22.0f, 5.0f, 280.0f, 43.0f));
+}
+
+void CrusherAudioProcessorEditor::showZoomMenu()
+{
+    if (logoHitTarget.getBounds().isEmpty() || zoomMenuOpen)
+        return;
+    zoomMenuOpen = true;
+    const auto logoScreenBounds = logoHitTarget.getScreenBounds();
     juce::PopupMenu menu;
     const int currentPercent = juce::roundToInt(
         100.0f * static_cast<float>(getWidth())
                / static_cast<float>(designWidth));
-    menu.setLookAndFeel(&lookAndFeel);
+    zoomMenuLookAndFeel.setPopupBorderColour(lookAndFeel.getPopupBorderColour());
+    menu.setLookAndFeel(&zoomMenuLookAndFeel);
     menu.addSectionHeader("GUI Zoom");
     for (const int percent : { 75, 100, 125, 150, 175, 200,
                                225, 250, 275, 300 })
@@ -4889,10 +4917,10 @@ void CrusherAudioProcessorEditor::showZoomMenu(juce::Point<int> screenPosition)
     // Anchor the popup to the rendered logo's bottom-left corner,
     // at any supported zoom.
     menu.showMenuAsync(juce::PopupMenu::Options()
-                           .withTargetComponent(&content)
-                           .withTargetScreenArea({ screenPosition.x,
-                                                   screenPosition.y, 1, 1 })
-                           .withMinimumWidth(75)
+                           .withTargetComponent(&logoHitTarget)
+                           .withTargetScreenArea({ logoScreenBounds.getX(),
+                                                   logoScreenBounds.getBottom(), 1, 1 })
+                           .withMinimumWidth(104)
                            .withMaximumNumColumns(1)
                            .withStandardItemHeight(19)
                            .withPreferredPopupDirection(
@@ -4900,7 +4928,10 @@ void CrusherAudioProcessorEditor::showZoomMenu(juce::Point<int> screenPosition)
         [safeThis = juce::Component::SafePointer<CrusherAudioProcessorEditor>(this)]
         (int selected)
         {
-            if (safeThis == nullptr || selected < 75 || selected > 300)
+            if (safeThis == nullptr)
+                return;
+            safeThis->zoomMenuOpen = false;
+            if (selected < 75 || selected > 300)
                 return;
             const float scale = static_cast<float>(selected) * 0.01f;
             safeThis->setSize(
@@ -6594,9 +6625,8 @@ void CrusherAudioProcessorEditor::paint(juce::Graphics& g)
 
     if (logoDrawable != nullptr)
         logoDrawable->drawWithin(
-            g, juce::Rectangle<float>(22.0f, 5.0f, 280.0f, 43.0f),
-            juce::RectanglePlacement::xLeft
-                | juce::RectanglePlacement::yMid,
+            g, renderedLogoBounds(),
+            juce::RectanglePlacement::stretchToFit,
             1.0f);
     g.restoreState();
 }
@@ -6606,6 +6636,7 @@ void CrusherAudioProcessorEditor::resized()
     const int designHeight = activeDesignHeight();
     content.setTransform(juce::AffineTransform());
     content.setBounds(0, 0, designWidth, designHeight);
+    logoHitTarget.setBounds(renderedLogoBounds().toNearestInt());
     const float scale = juce::jmin(
         static_cast<float>(getWidth()) / static_cast<float>(designWidth),
         static_cast<float>(getHeight()) / static_cast<float>(designHeight));
