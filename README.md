@@ -117,7 +117,7 @@ All five new controls are saved, automated and available to the existing sequenc
 ## Identity and storage
 
 - Project/output: `Crusher`, VST3 binary `Crusher.vst3`
-- Version: `1.46.1`; manufacturer `sl23`; plugin code `cru1`; bundle ID `com.sl23.crusher`
+- Version: `1.46.2`; manufacturer `sl23`; plugin code `cru1`; bundle ID `com.sl23.crusher`
 - State root: `CrusherParameters`, schema version **3**
 - Presets: `.crusherpreset`; sequences: `.crusherseq` (`CrusherSequence` state root)
 - Portable data: **`Crusher_Data`** beside the installed VST3 when needed; the build does not create this directory.

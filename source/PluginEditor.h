@@ -480,6 +480,7 @@ private:
     void selectFavouritePresets();
     void refreshPresetList();
     void updatePresetNavigationDisplay();
+    void updateEditorResizeLimits();
     void setSequencerOpen(bool);
     juce::Rectangle<float> renderedLogoBounds() const;
     void showZoomMenu();

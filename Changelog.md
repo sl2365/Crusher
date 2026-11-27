@@ -1,5 +1,10 @@
 # Crusher Changelog
 
+## v1.46.2 — 75% GUI zoom resize limits (2026-11-27)
+
+- Fixed stale minimum expanded editor height (414 px rather than approximately 398 px at 75%). Derive the minimum and maximum dimensions from the current collapsed or expanded design dimensions and the supported 75–300% scale range; allow integer-pixel rounding at the lower boundary. Apply the same limits when creating the editor or toggling the sequencer.
+- Existing aspect-ratio scaling, logo hit area, popup styling and dismissal, DSP and MIDI Learn unchanged. Geometry and source-integrity checks passed; Windows build and PHI resize verification pending.
+
 ## v1.46.1 — Logo and GUI Zoom menu (2026-11-27)
 
 - Matched the compact Dusk screenshot with a 12-pixel menu font, 104-pixel minimum width, 19-pixel rows and compact GUI Zoom heading; retains Crusher’s theme border and zoom scaling.
